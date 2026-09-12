@@ -18,6 +18,10 @@ const ALLOWED_TABLES = new Set([
 ]);
 
 const JSON_COLUMNS = new Set(["skills", "inputs", "results", "details", "raw_user_meta_data", "effort", "tags"]);
+const EDIT_ROLES = new Set(["admin", "manager", "management", "project_manager", "technical_lead", "calculator_user"]);
+const COST_ROLES = new Set(["admin", "finance"]);
+const FINANCE_ROLES = new Set(["admin", "finance", "management"]);
+const ADMIN_ONLY = new Set(["admin"]);
 
 function jsonResponse(data: any, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -49,12 +53,15 @@ function parseJsonRow(row: any) {
 
 async function getAuthUser(request: Request) {
   const authHeader = request.headers.get("authorization") || "";
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const cookieToken = request.headers.get("cookie")?.match(/(?:^|;\s*)costcraft_session=([^;]+)/)?.[1];
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim() || cookieToken || "";
   if (!token) return null;
+
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
   const session = await queryOne<{ user_id: string; expires_at: Date }>(
     "SELECT user_id, expires_at FROM sessions WHERE token = ? AND expires_at > NOW()",
-    [token]
+    [tokenHash]
   );
   if (!session) return null;
 
@@ -73,11 +80,42 @@ async function getAuthUser(request: Request) {
     }
   }
 
+  const profile = await queryOne<{ company_id: string | null }>("SELECT company_id FROM profiles WHERE id = ?", [user.id]);
+  const roles = profile?.company_id
+    ? (await query<{ role: string }>("SELECT role FROM user_roles WHERE user_id = ? AND company_id = ?", [user.id, profile.company_id])).map((r) => r.role)
+    : [];
+
   return {
     id: user.id,
     email: user.email,
     user_metadata: meta || {},
+    companyId: profile?.company_id || null,
+    roles,
   };
+}
+
+function hasRole(user: Awaited<ReturnType<typeof getAuthUser>>, allowed: Set<string>) {
+  return !!user && user.roles.some((role) => allowed.has(role));
+}
+
+function dataScope(table: string, user: NonNullable<Awaited<ReturnType<typeof getAuthUser>>>) {
+  if (table === "profiles") return user.companyId ? { sql: "(`id` = ? OR `company_id` = ?)", params: [user.id, user.companyId] } : { sql: "`id` = ?", params: [user.id] };
+  if (table === "companies") return user.companyId ? { sql: "`id` = ?", params: [user.companyId] } : null;
+  if (table === "scope_features") return user.companyId ? { sql: "(`company_id` IS NULL OR `company_id` = ?)", params: [user.companyId] } : { sql: "`company_id` IS NULL", params: [] };
+  return user.companyId ? { sql: "`company_id` = ?", params: [user.companyId] } : null;
+}
+
+function canWriteTable(table: string, user: NonNullable<Awaited<ReturnType<typeof getAuthUser>>>, operation: "insert" | "update" | "delete") {
+  if (table === "profiles") return operation === "update";
+  if (table === "companies") return operation === "update" && hasRole(user, ADMIN_ONLY);
+  if (table === "user_roles" || table === "invitations") return hasRole(user, ADMIN_ONLY);
+  if (table === "employees" || table === "overheads" || table === "cost_policies" || table === "scope_features" || table === "project_presets") return hasRole(user, COST_ROLES);
+  if (table === "projects" || table === "calculations") return hasRole(user, EDIT_ROLES);
+  return false;
+}
+
+function rejectUnauthenticated(user: Awaited<ReturnType<typeof getAuthUser>>) {
+  return !user ? jsonResponse({ error: { message: "Not authenticated" } }, 401) : null;
 }
 
 export async function handleApiRequest(request: Request): Promise<Response> {
@@ -95,7 +133,7 @@ export async function handleApiRequest(request: Request): Promise<Response> {
     });
   }
 
-  if (process.env.VITE_BACKEND === "supabase") {
+  if (process.env["VITE_BACKEND"] !== "local") {
     return jsonResponse(
       { error: { message: "The legacy MySQL API is disabled while Supabase is active." } },
       410,
@@ -129,10 +167,11 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       }
 
       const token = crypto.randomUUID() + "-" + crypto.randomBytes(16).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
       await query("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)", [
-        token,
+        tokenHash,
         user.id,
         expiresAt,
       ]);
@@ -152,10 +191,10 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         user_metadata: meta || {},
       };
 
-      return jsonResponse({
+      const response = jsonResponse({
         data: {
           session: {
-            access_token: token,
+            access_token: "",
             token_type: "bearer",
             user: userObj,
           },
@@ -163,6 +202,8 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         },
         error: null,
       });
+      response.headers.set("Set-Cookie", `costcraft_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${process.env["NODE_ENV"] === "production" ? "; Secure" : ""}`);
+      return response;
     }
 
     if (path === "/api/auth/signup" && request.method === "POST") {
@@ -193,10 +234,11 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       );
 
       const token = crypto.randomUUID() + "-" + crypto.randomBytes(16).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
       await query("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)", [
-        token,
+        tokenHash,
         userId,
         expiresAt,
       ]);
@@ -207,10 +249,10 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         user_metadata: meta,
       };
 
-      return jsonResponse({
+      const response = jsonResponse({
         data: {
           session: {
-            access_token: token,
+            access_token: "",
             token_type: "bearer",
             user: userObj,
           },
@@ -218,6 +260,8 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         },
         error: null,
       });
+      response.headers.set("Set-Cookie", `costcraft_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${process.env["NODE_ENV"] === "production" ? "; Secure" : ""}`);
+      return response;
     }
 
     if (path === "/api/auth/user" && request.method === "GET") {
@@ -230,11 +274,13 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
     if (path === "/api/auth/logout" && request.method === "POST") {
       const authHeader = request.headers.get("authorization") || "";
-      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim() || request.headers.get("cookie")?.match(/(?:^|;\s*)costcraft_session=([^;]+)/)?.[1] || "";
       if (token) {
-        await query("DELETE FROM sessions WHERE token = ?", [token]);
+        await query("DELETE FROM sessions WHERE token = ?", [crypto.createHash("sha256").update(token).digest("hex")]);
       }
-      return jsonResponse({ error: null });
+      const response = jsonResponse({ error: null });
+      response.headers.set("Set-Cookie", "costcraft_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+      return response;
     }
 
     // -------------------------------------------------------------
@@ -254,6 +300,8 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
       // 1. company_employee_rates
       if (rpcName === "company_employee_rates") {
+        const unauthorized = rejectUnauthenticated(currentUser);
+        if (unauthorized) return unauthorized;
         const companyId = await getUserCompanyId();
         if (!companyId) {
           return jsonResponse({ data: [], error: null });
@@ -316,6 +364,9 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
       // 2. company_members
       if (rpcName === "company_members") {
+        const unauthorized = rejectUnauthenticated(currentUser);
+        if (unauthorized) return unauthorized;
+        if (!hasRole(currentUser, ADMIN_ONLY)) return jsonResponse({ error: { message: "Administrator access required" } }, 403);
         const companyId = await getUserCompanyId();
         if (!companyId) return jsonResponse({ data: [], error: null });
 
@@ -388,6 +439,9 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
       // 4. set_member_role
       if (rpcName === "set_member_role") {
+        const unauthorized = rejectUnauthenticated(currentUser);
+        if (unauthorized) return unauthorized;
+        if (!hasRole(currentUser, ADMIN_ONLY)) return jsonResponse({ error: { message: "Administrator access required" } }, 403);
         const companyId = await getUserCompanyId();
         const { _user_id, _role } = body;
         if (!companyId) return jsonResponse({ error: { message: "No company" } }, 400);
@@ -401,6 +455,9 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
       // 5. remove_member
       if (rpcName === "remove_member") {
+        const unauthorized = rejectUnauthenticated(currentUser);
+        if (unauthorized) return unauthorized;
+        if (!hasRole(currentUser, ADMIN_ONLY)) return jsonResponse({ error: { message: "Administrator access required" } }, 403);
         const companyId = await getUserCompanyId();
         const { _user_id } = body;
         if (!companyId) return jsonResponse({ error: { message: "No company" } }, 400);
@@ -412,6 +469,8 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
       // 6. invitation_preview
       if (rpcName === "invitation_preview") {
+        const unauthorized = rejectUnauthenticated(currentUser);
+        if (unauthorized) return unauthorized;
         const { _token } = body;
         const inv = await queryOne<any>(
           `SELECT i.email, i.role, i.status, i.expires_at, c.name as company_name
@@ -434,6 +493,13 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         const { _token } = body;
         const inv = await queryOne<any>("SELECT * FROM invitations WHERE token = ?", [_token]);
         if (!inv) return jsonResponse({ error: { message: "Invalid invitation" } }, 400);
+        if (inv.status !== "pending" || (inv.expires_at && new Date(inv.expires_at) < new Date())) {
+          return jsonResponse({ error: { message: "Invitation is no longer active" } }, 400);
+        }
+        if (String(inv.email).toLowerCase() !== currentUser.email.toLowerCase()) {
+          return jsonResponse({ error: { message: "Invitation email does not match" } }, 403);
+        }
+        if (currentUser.companyId) return jsonResponse({ error: { message: "You already belong to a company" } }, 400);
 
         await query("UPDATE profiles SET company_id = ? WHERE id = ?", [inv.company_id, currentUser.id]);
         await query("INSERT INTO user_roles (id, user_id, company_id, role) VALUES (?, ?, ?, ?)", [
@@ -446,8 +512,14 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
       // 8. decline_invitation
       if (rpcName === "decline_invitation") {
+        const unauthorized = rejectUnauthenticated(currentUser);
+        if (unauthorized) return unauthorized;
         const { _token } = body;
-        await query("UPDATE invitations SET status = 'declined', responded_at = NOW() WHERE token = ?", [_token]);
+        const inv = await queryOne<any>("SELECT email, status FROM invitations WHERE token = ?", [_token]);
+        if (!inv || inv.status !== "pending" || String(inv.email).toLowerCase() !== currentUser!.email.toLowerCase()) {
+          return jsonResponse({ error: { message: "Invitation is not valid for this user" } }, 403);
+        }
+        await query("UPDATE invitations SET status = 'declined', responded_at = NOW() WHERE token = ? AND status = 'pending'", [_token]);
         return jsonResponse({ data: null, error: null });
       }
 
@@ -458,12 +530,17 @@ export async function handleApiRequest(request: Request): Promise<Response> {
     // DATA CRUD ROUTES
     // -------------------------------------------------------------
     if (path === "/api/data/query" && request.method === "POST") {
+      const currentUser = await getAuthUser(request);
+      const unauthorized = rejectUnauthenticated(currentUser);
+      if (unauthorized) return unauthorized;
       const body = await request.json();
       const { table, select, filters = [], order = [], limit, single = false, maybeSingle = false } = body;
 
       if (!ALLOWED_TABLES.has(table)) {
         return jsonResponse({ error: { message: `Table ${table} is not accessible.` } }, 400);
       }
+      const scope = dataScope(table, currentUser!);
+      if (!scope) return jsonResponse({ data: [], error: null });
 
       let selectClause = "*";
       if (typeof select === "string" && select.trim() !== "*") {
@@ -475,7 +552,8 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       }
 
       let sql = `SELECT ${selectClause} FROM \`${table}\``;
-      const params: any[] = [];
+      const params: any[] = [...scope.params];
+      sql += ` WHERE ${scope.sql}`;
 
       if (Array.isArray(filters) && filters.length > 0) {
         const whereClauses: string[] = [];
@@ -502,7 +580,7 @@ export async function handleApiRequest(request: Request): Promise<Response> {
           }
         }
         if (whereClauses.length > 0) {
-          sql += ` WHERE ${whereClauses.join(" AND ")}`;
+          sql += ` AND ${whereClauses.join(" AND ")}`;
         }
       }
 
@@ -583,18 +661,29 @@ export async function handleApiRequest(request: Request): Promise<Response> {
     }
 
     if (path === "/api/data/insert" && request.method === "POST") {
+      const currentUser = await getAuthUser(request);
+      const unauthorized = rejectUnauthenticated(currentUser);
+      if (unauthorized) return unauthorized;
       const body = await request.json();
       const { table, data } = body;
 
       if (!ALLOWED_TABLES.has(table)) {
         return jsonResponse({ error: { message: `Table ${table} is not accessible.` } }, 400);
       }
+      if (!canWriteTable(table, currentUser!, "insert")) return jsonResponse({ error: { message: "You are not allowed to insert this data." } }, 403);
 
       const records = Array.isArray(data) ? data : [data];
       const insertedRows: any[] = [];
 
       for (const rec of records) {
         const insertRecord = { ...rec };
+        const scope = dataScope(table, currentUser!);
+        if (!scope || ("company_id" in insertRecord && insertRecord.company_id !== currentUser!.companyId)) {
+          return jsonResponse({ error: { message: "Data must belong to your workspace." } }, 403);
+        }
+        if (table !== "profiles" && !insertRecord.company_id) {
+          return jsonResponse({ error: { message: "A workspace is required." } }, 400);
+        }
         if (!insertRecord.id) {
           insertRecord.id = crypto.randomUUID();
         }
@@ -615,7 +704,7 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         const sql = `INSERT INTO \`${table}\` (${keys.join(", ")}) VALUES (${placeholders})`;
 
         await query(sql, values);
-        const inserted = await queryOne(`SELECT * FROM \`${table}\` WHERE id = ?`, [insertRecord.id]);
+        const inserted = await queryOne(`SELECT * FROM \`${table}\` WHERE id = ? AND ${scope.sql}`, [insertRecord.id, ...scope.params]);
         insertedRows.push(parseJsonRow(inserted));
       }
 
@@ -626,11 +715,19 @@ export async function handleApiRequest(request: Request): Promise<Response> {
     }
 
     if (path === "/api/data/update" && request.method === "POST") {
+      const currentUser = await getAuthUser(request);
+      const unauthorized = rejectUnauthenticated(currentUser);
+      if (unauthorized) return unauthorized;
       const body = await request.json();
       const { table, data, filters = [] } = body;
 
       if (!ALLOWED_TABLES.has(table)) {
         return jsonResponse({ error: { message: `Table ${table} is not accessible.` } }, 400);
+      }
+      if (!canWriteTable(table, currentUser!, "update")) return jsonResponse({ error: { message: "You are not allowed to update this data." } }, 403);
+      if (data?.company_id && data.company_id !== currentUser!.companyId) return jsonResponse({ error: { message: "Data must remain in your workspace." } }, 403);
+      if (table === "profiles" && !filters.some((f: any) => f.column === "id" && f.op === "eq" && f.value === currentUser!.id)) {
+        return jsonResponse({ error: { message: "You may only update your own profile." } }, 403);
       }
 
       const setClauses: string[] = [];
@@ -652,6 +749,10 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       }
 
       let sql = `UPDATE \`${table}\` SET ${setClauses.join(", ")}`;
+      const scope = dataScope(table, currentUser!);
+      if (!scope) return jsonResponse({ error: { message: "Workspace membership required." } }, 403);
+      sql += ` WHERE ${scope.sql}`;
+      const setParams = [...params];
 
       if (Array.isArray(filters) && filters.length > 0) {
         const whereClauses: string[] = [];
@@ -663,9 +764,11 @@ export async function handleApiRequest(request: Request): Promise<Response> {
           }
         }
         if (whereClauses.length > 0) {
-          sql += ` WHERE ${whereClauses.join(" AND ")}`;
+          sql += ` AND ${whereClauses.join(" AND ")}`;
         }
       }
+
+      params.splice(0, params.length, ...setParams, ...scope.params, ...params.slice(setParams.length));
 
       await query(sql, params);
 
@@ -673,22 +776,29 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       const idFilter = filters.find((f: any) => f.column === "id" && f.op === "eq");
       let updatedRow = null;
       if (idFilter) {
-        updatedRow = await queryOne(`SELECT * FROM \`${table}\` WHERE id = ?`, [idFilter.value]);
+        updatedRow = await queryOne(`SELECT * FROM \`${table}\` WHERE id = ? AND ${scope.sql}`, [idFilter.value, ...scope.params]);
       }
 
       return jsonResponse({ data: parseJsonRow(updatedRow), error: null });
     }
 
     if (path === "/api/data/delete" && request.method === "POST") {
+      const currentUser = await getAuthUser(request);
+      const unauthorized = rejectUnauthenticated(currentUser);
+      if (unauthorized) return unauthorized;
       const body = await request.json();
       const { table, filters = [] } = body;
 
       if (!ALLOWED_TABLES.has(table)) {
         return jsonResponse({ error: { message: `Table ${table} is not accessible.` } }, 400);
       }
+      if (!canWriteTable(table, currentUser!, "delete")) return jsonResponse({ error: { message: "You are not allowed to delete this data." } }, 403);
 
       let sql = `DELETE FROM \`${table}\``;
-      const params: any[] = [];
+      const scope = dataScope(table, currentUser!);
+      if (!scope) return jsonResponse({ error: { message: "Workspace membership required." } }, 403);
+      const params: any[] = [...scope.params];
+      sql += ` WHERE ${scope.sql}`;
 
       if (Array.isArray(filters) && filters.length > 0) {
         const whereClauses: string[] = [];
@@ -700,7 +810,7 @@ export async function handleApiRequest(request: Request): Promise<Response> {
           }
         }
         if (whereClauses.length > 0) {
-          sql += ` WHERE ${whereClauses.join(" AND ")}`;
+          sql += ` AND ${whereClauses.join(" AND ")}`;
         }
       }
 

@@ -9,6 +9,15 @@ async function main() {
   const user = process.env.MYSQL_USER || "root";
   const password = process.env.MYSQL_PASSWORD || "";
   const dbName = process.env.MYSQL_DATABASE || "alisons_costcraft";
+  const adminEmail = process.env.COSTCRAFT_ADMIN_EMAIL?.trim().toLowerCase();
+  const adminPassword = process.env.COSTCRAFT_ADMIN_PASSWORD;
+  const adminFullName = process.env.COSTCRAFT_ADMIN_NAME || "CostCraft Administrator";
+
+  if (!adminEmail || !adminPassword || adminPassword.length < 12) {
+    throw new Error(
+      "Set COSTCRAFT_ADMIN_EMAIL and a COSTCRAFT_ADMIN_PASSWORD of at least 12 characters before initializing MySQL.",
+    );
+  }
 
   console.log(`Connecting to MySQL on ${host}:${port} as ${user}...`);
 
@@ -293,11 +302,8 @@ async function main() {
     );
   }
 
-  // 6. Seed Admin User Credentials
-  const adminEmail = "admin@alisonstechnology.com";
-  const adminPasswordPlain = "Alisons@2026!";
-  const adminFullName = "Alisons Admin";
-  const passwordHash = await bcrypt.hash(adminPasswordPlain, 10);
+  // 6. Bootstrap an operator-provided admin. Never keep credentials in source or reset them.
+  const passwordHash = await bcrypt.hash(adminPassword, 12);
 
   const [existingUsers] = await connection.query<any[]>(
     "SELECT id FROM auth_users WHERE email = ?",
@@ -307,11 +313,7 @@ async function main() {
   let adminUserId = crypto.randomUUID();
   if (existingUsers.length > 0) {
     adminUserId = existingUsers[0].id;
-    console.log(`Admin user "${adminEmail}" already exists. Updating password and profile...`);
-    await connection.query(
-      "UPDATE auth_users SET password_hash = ?, raw_user_meta_data = ? WHERE id = ?",
-      [passwordHash, JSON.stringify({ full_name: adminFullName }), adminUserId]
-    );
+    throw new Error(`Admin user "${adminEmail}" already exists. Refusing to reset an existing account.`);
   } else {
     console.log(`Creating admin user "${adminEmail}"...`);
     await connection.query(
@@ -334,184 +336,12 @@ async function main() {
     [crypto.randomUUID(), adminUserId, targetCompanyId]
   );
 
-  // 7. Seed Employees from July 2026 Payslip & Organizational Hierarchy
-  console.log("Seeding employees & leadership for Alisons Technology...");
-  const employeesData = [
-    // Executive Leadership & Directors (2 Directors)
-    {
-      name: "Omair",
-      department: "Management",
-      job_title: "Director & Technology Strategist",
-      seniority: "Director",
-      monthly_salary: 400000,
-      billable_target_pct: 25,
-      skills: ["Technology Strategy", "Enterprise Architecture", "Executive Leadership", "Client Relations"],
-    },
-    {
-      name: "Khurram",
-      department: "Management",
-      job_title: "Director & Operations",
-      seniority: "Director",
-      monthly_salary: 400000,
-      billable_target_pct: 25,
-      skills: ["Business Strategy", "Operations", "Governance", "Client Partnerships"],
-    },
-    // Management & Sales
-    {
-      name: "Syed Sultan Raza Shah",
-      department: "Management",
-      job_title: "Project Manager",
-      seniority: "Lead",
-      monthly_salary: 100000,
-      billable_target_pct: 80,
-      skills: ["Project Management", "Agile / Scrum", "Sprint Planning", "Client Communication", "Delivery"],
-    },
-    {
-      name: "Ayesha badar",
-      department: "Sales",
-      job_title: "Sales Executive & Client Acquisition",
-      seniority: "Manager",
-      monthly_salary: 35000,
-      billable_target_pct: 20,
-      skills: ["Sales", "Business Development", "Client Pitching", "Lead Generation"],
-    },
-    // Production Leadership
-    {
-      name: "Muhammad Yousuf",
-      department: "Production",
-      job_title: "Team Lead & Principal Architect",
-      seniority: "Lead",
-      monthly_salary: 121936,
-      billable_target_pct: 80,
-      skills: ["Team Leadership", "System Architecture", "DevOps", "Code Quality", "Fullstack"],
-    },
-    // Design Team
-    {
-      name: "Faiza Jamal",
-      department: "Design",
-      job_title: "Design Lead",
-      seniority: "Lead",
-      monthly_salary: 46775,
-      billable_target_pct: 80,
-      skills: ["UI/UX Leadership", "Design Systems", "Figma", "User Research", "Interaction Design"],
-    },
-    {
-      name: "Yousuf Ansari",
-      department: "Design",
-      job_title: "UI/UX Designer",
-      seniority: "Mid-level",
-      monthly_salary: 27000,
-      billable_target_pct: 85,
-      skills: ["UI/UX Design", "Figma", "Wireframing", "Visual Design", "Prototyping"],
-    },
-    // Engineering Specialists
-    {
-      name: "Hassnain Yaqoob",
-      department: "Production",
-      job_title: "MERN Stack Developer",
-      seniority: "Senior",
-      monthly_salary: 78388,
-      billable_target_pct: 85,
-      skills: ["React", "Node.js", "Express", "MongoDB", "TypeScript", "Next.js"],
-    },
-    {
-      name: "Osama khan",
-      department: "Production",
-      job_title: "Laravel Developer",
-      seniority: "Senior",
-      monthly_salary: 60000,
-      billable_target_pct: 85,
-      skills: ["PHP", "Laravel", "MySQL", "REST APIs", "Backend Architecture"],
-    },
-    {
-      name: "Mubashir shakeel",
-      department: "Production",
-      job_title: "Mobile App Developer",
-      seniority: "Mid-level",
-      monthly_salary: 40000,
-      billable_target_pct: 85,
-      skills: ["Flutter", "React Native", "iOS", "Android", "Mobile UI"],
-    },
-    {
-      name: "Syed Minhaj Albeez",
-      department: "Production",
-      job_title: "Software Engineer",
-      seniority: "Mid-level",
-      monthly_salary: 33871,
-      billable_target_pct: 85,
-      skills: ["Backend", "Node.js", "APIs", "Database Design"],
-    },
-    // Junior Developers & QA
-    {
-      name: "Kamran faiz",
-      department: "Production",
-      job_title: "Junior Developer / QA",
-      seniority: "Junior",
-      monthly_salary: 20000,
-      billable_target_pct: 90,
-      skills: ["QA Testing", "Frontend", "Regression Testing", "Bug Reporting"],
-    },
-    {
-      name: "Abdur Rehman",
-      department: "Production",
-      job_title: "Junior Backend Developer",
-      seniority: "Junior",
-      monthly_salary: 20000,
-      billable_target_pct: 90,
-      skills: ["Backend", "Database", "Python", "Node.js"],
-    },
-    {
-      name: "Kanza Batool",
-      department: "Production",
-      job_title: "Junior Frontend Developer",
-      seniority: "Junior",
-      monthly_salary: 20000,
-      billable_target_pct: 90,
-      skills: ["Frontend", "HTML/CSS", "React", "Web Styling"],
-    },
-  ];
-
-  for (const emp of employeesData) {
-    const annualSalary = emp.monthly_salary * 12;
-    const [existing] = await connection.query<any[]>(
-      "SELECT id FROM employees WHERE company_id = ? AND name = ?",
-      [targetCompanyId, emp.name]
-    );
-
-    const billableTarget = emp.billable_target_pct || 75;
-
-    if (existing.length > 0) {
-      await connection.query(
-        `UPDATE employees SET 
-          department = ?, job_title = ?, seniority = ?, 
-          annual_salary = ?, billable_target_pct = ?, skills = ?, active = true 
-         WHERE id = ?`,
-        [emp.department, emp.job_title, emp.seniority, annualSalary, billableTarget, JSON.stringify(emp.skills), existing[0].id]
-      );
-      console.log(`  Updated employee: ${emp.name} - ${emp.job_title} (Monthly: Rs. ${emp.monthly_salary.toLocaleString()} | Annual: Rs. ${annualSalary.toLocaleString()})`);
-    } else {
-      await connection.query(
-        `INSERT INTO employees 
-          (id, company_id, name, department, job_title, seniority, annual_salary, employer_cost_pct, billable_target_pct, skills, active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 20, ?, ?, true)`,
-        [crypto.randomUUID(), targetCompanyId, emp.name, emp.department, emp.job_title, emp.seniority, annualSalary, billableTarget, JSON.stringify(emp.skills)]
-      );
-      console.log(`  Inserted employee: ${emp.name} - ${emp.job_title} (Monthly: Rs. ${emp.monthly_salary.toLocaleString()} | Annual: Rs. ${annualSalary.toLocaleString()})`);
-    }
-  }
+  // 7. Employee and overhead records are intentionally not seeded here.
+  // Salary/PII fixtures must be entered by authorized workspace users, never committed to source.
 
   // 8. Seed Office Expenses & Subscriptions
   console.log("Seeding office expenses & subscriptions as monthly overheads...");
-  const officeExpenses = [
-    { name: "Office Rent", category: "facilities", monthly_amount: 143000 },
-    { name: "Office Electric bill", category: "utilities", monthly_amount: 103280 },
-    { name: "Peon", category: "office_support", monthly_amount: 32000 },
-    { name: "Office 365 ($1,124/yr)", category: "software", monthly_amount: 26227 },
-    { name: "Server Cost ($748/yr)", category: "infrastructure", monthly_amount: 17453 },
-    { name: "Office Bill internet (PTCL + Strom fiber)", category: "connectivity", monthly_amount: 17969 },
-    { name: "Office exp", category: "general", monthly_amount: 15000 },
-    { name: "Office Guard", category: "security", monthly_amount: 9000 },
-  ];
+  const officeExpenses: Array<{ name: string; category: string; monthly_amount: number }> = [];
 
   for (const exp of officeExpenses) {
     const [existing] = await connection.query<any[]>(
@@ -540,13 +370,9 @@ async function main() {
   console.log("========================================================");
   console.log(`Company: Alisons Technology`);
   console.log(`Currency: PKR (₨)`);
-  console.log(`Employees Seeded: ${employeesData.length}`);
+  console.log("Employees seeded: 0 (enter personnel data through the authorized app)");
   console.log(`Office Overheads Seeded: ${officeExpenses.length}`);
   console.log(`Monthly Total Overhead: Rs. ${officeExpenses.reduce((s, o) => s + o.monthly_amount, 0).toLocaleString()}`);
-  console.log("--------------------------------------------------------");
-  console.log("LOGIN CREDENTIALS:");
-  console.log(`Email:    ${adminEmail}`);
-  console.log(`Password: ${adminPasswordPlain}`);
   console.log("========================================================\n");
 
   await connection.end();

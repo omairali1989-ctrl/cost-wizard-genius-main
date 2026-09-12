@@ -1,4 +1,3 @@
-  const { presets } = usePresetLibrary(companyId);
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

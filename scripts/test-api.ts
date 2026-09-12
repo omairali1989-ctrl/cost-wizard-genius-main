@@ -1,29 +1,31 @@
 async function test() {
   const baseUrl = "http://localhost:8081";
+  const email = process.env.COSTCRAFT_TEST_EMAIL;
+  const password = process.env.COSTCRAFT_TEST_PASSWORD;
+  if (!email || !password) throw new Error("Set COSTCRAFT_TEST_EMAIL and COSTCRAFT_TEST_PASSWORD to run the API test.");
 
   console.log("1. Testing POST /api/auth/login...");
   const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      email: "admin@alisonstechnology.com",
-      password: "Alisons@2026!",
+      email,
+      password,
     }),
   });
 
   const loginData = await loginRes.json();
-  if (loginData.error || !loginData.data?.session?.access_token) {
+  if (loginData.error || !loginData.data?.user) {
     throw new Error(`Login failed: ${JSON.stringify(loginData)}`);
   }
 
-  const token = loginData.data.session.access_token;
   const user = loginData.data.user;
   console.log(`✓ Logged in as: ${user.email} (ID: ${user.id})`);
-  console.log(`✓ Session Token: ${token.slice(0, 20)}...`);
-
+  const cookie = loginRes.headers.get("set-cookie")?.split(";")[0];
+  if (!cookie) throw new Error("Login did not return a session cookie");
   const authHeaders = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
+    Cookie: cookie,
   };
 
   console.log("\n2. Testing GET /api/auth/user...");
@@ -69,10 +71,7 @@ async function test() {
   });
   const empData = await empRes.json();
   console.log(`✓ Total Employees Retrieved: ${empData.data.length}`);
-  for (const e of empData.data) {
-    const monthly = Math.round(Number(e.annual_salary) / 12);
-    console.log(`   - ${e.name} (${e.department}, ${e.job_title}): Rs. ${monthly.toLocaleString()}/mo`);
-  }
+  console.log("   Salary values intentionally omitted from test output.");
 
   console.log("\n5. Testing Query: Overheads (Office Expenses)...");
   const ohRes = await fetch(`${baseUrl}/api/data/query`, {
@@ -87,11 +86,7 @@ async function test() {
   const ohData = await ohRes.json();
   console.log(`✓ Total Overheads Retrieved: ${ohData.data.length}`);
   let totalOverhead = 0;
-  for (const o of ohData.data) {
-    const amt = Number(o.monthly_amount);
-    totalOverhead += amt;
-    console.log(`   - ${o.name}: Rs. ${amt.toLocaleString()}/mo (${o.category})`);
-  }
+  for (const o of ohData.data) totalOverhead += Number(o.monthly_amount);
   console.log(`✓ Total Monthly Office Expenses: Rs. ${totalOverhead.toLocaleString()}`);
 
   console.log("\n6. Testing RPC: company_employee_rates...");

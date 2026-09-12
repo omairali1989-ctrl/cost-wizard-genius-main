@@ -181,6 +181,11 @@ MYSQL_PORT="3306"
 MYSQL_USER="root"
 MYSQL_PASSWORD=""
 MYSQL_DATABASE="alisons_costcraft"
+
+# Required only for the first local bootstrap; never commit these values.
+COSTCRAFT_ADMIN_EMAIL="your-admin@example.com"
+COSTCRAFT_ADMIN_PASSWORD="use-a-unique-password-at-least-12-characters"
+COSTCRAFT_ADMIN_NAME="CostCraft Administrator"
 ```
 
 The checked-in project `.env` is configured for the Supabase project used by this workspace. Replace credentials with deployment-specific secrets in CI, hosting, or local development.
@@ -266,7 +271,8 @@ Before deployment:
 - API and SSR responses include CSP, frame protection, content-type protection, referrer, and permissions headers.
 - Login redirect targets are restricted to safe same-origin relative paths.
 - Rotate any Supabase secret that has been exposed in chat, logs, backups, or public repositories.
-- For stronger token theft resistance, migrate browser session persistence to server-managed, HttpOnly, Secure, SameSite cookies before high-risk production use.
+- MySQL compatibility sessions use hashed server-side tokens and HttpOnly cookies; the browser stores only non-secret session metadata.
+- Supabase browser sessions are scoped to `sessionStorage`; migrate to server-managed, HttpOnly, Secure, SameSite cookies before high-risk production use.
 
 ## Repository Structure
 

@@ -32,7 +32,9 @@ const authListeners = new Set<AuthStateListener>();
 function getStoredSession(): Session | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    // Remove sessions written by versions that persisted bearer tokens in localStorage.
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -43,9 +45,11 @@ function setStoredSession(session: Session | null) {
   if (typeof window === "undefined") return;
   try {
     if (session) {
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+      // The bearer is kept in an HttpOnly cookie by the server; only non-secret
+      // session metadata is retained here so XSS cannot steal an API token.
+      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ ...session, access_token: "" }));
     } else {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
     }
   } catch {
     // ignore
@@ -69,7 +73,7 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
   if (session?.access_token) {
     headers.set("Authorization", `Bearer ${session.access_token}`);
   }
-  return fetch(path, { ...options, headers });
+  return fetch(path, { ...options, headers, credentials: "same-origin" });
 }
 
 export class QueryBuilder<TRow = any> {
@@ -248,9 +252,10 @@ const mysqlSupabase: SupabaseClient = {
         if (json.error) {
           return { data: { user: null, session: null }, error: json.error };
         }
-        setStoredSession(json.data.session);
-        notifyAuthListeners("SIGNED_IN", json.data.session);
-        return { data: json.data, error: null };
+        const session = { ...json.data.session, access_token: "" };
+        setStoredSession(session);
+        notifyAuthListeners("SIGNED_IN", session);
+        return { data: { ...json.data, session }, error: null };
       } catch (err: any) {
         return { data: { user: null, session: null }, error: { message: err.message } };
       }
@@ -274,9 +279,10 @@ const mysqlSupabase: SupabaseClient = {
         if (json.error) {
           return { data: { user: null, session: null }, error: json.error };
         }
-        setStoredSession(json.data.session);
-        notifyAuthListeners("SIGNED_IN", json.data.session);
-        return { data: json.data, error: null };
+        const session = { ...json.data.session, access_token: "" };
+        setStoredSession(session);
+        notifyAuthListeners("SIGNED_IN", session);
+        return { data: { ...json.data, session }, error: null };
       } catch (err: any) {
         return { data: { user: null, session: null }, error: { message: err.message } };
       }
@@ -335,10 +341,14 @@ const mysqlSupabase: SupabaseClient = {
   },
 };
 
-const useSupabaseBackend = import.meta.env.VITE_BACKEND === "supabase";
+const backendMode = import.meta.env["VITE_BACKEND"];
+if (backendMode !== "supabase" && backendMode !== "local") {
+  throw new Error("VITE_BACKEND must be explicitly set to 'supabase' or 'local'.");
+}
+const useSupabaseBackend = backendMode === "supabase";
 const supabaseBackend =
-  useSupabaseBackend && import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_KEY
-    ? createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_KEY)
+  useSupabaseBackend && import.meta.env["VITE_SUPABASE_URL"] && import.meta.env["VITE_SUPABASE_KEY"]
+    ? createClient(import.meta.env["VITE_SUPABASE_URL"], import.meta.env["VITE_SUPABASE_KEY"])
     : null;
 
 if (useSupabaseBackend && !supabaseBackend) {

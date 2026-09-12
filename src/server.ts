@@ -12,14 +12,14 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-  "Content-Security-Policy":
-    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://qhlqptgvizefbecsotvf.supabase.co wss://qhlqptgvizefbecsotvf.supabase.co; script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    "Content-Security-Policy":
+      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://qhlqptgvizefbecsotvf.supabase.co wss://qhlqptgvizefbecsotvf.supabase.co; script-src 'self'",
 };
 
 function withSecurityHeaders(response: Response): Response {
   const headers = new Headers(response.headers);
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
-  if (process.env.NODE_ENV === "production") headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  if (process.env["NODE_ENV"] === "production") headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 

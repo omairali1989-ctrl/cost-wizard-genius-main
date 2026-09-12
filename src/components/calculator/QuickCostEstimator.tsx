@@ -36,7 +36,6 @@ export { PRESETS } from "./qce/presets";
 export type { PresetCategory } from "./qce/types";
 
 interface QuickCostEstimatorProps {
-    companyId?: string;
   companyId?: string;
   employees: TeamMemberRate[];
   currency: string;
@@ -48,8 +47,6 @@ interface QuickCostEstimatorProps {
 }
 
 export const QuickCostEstimator = React.memo(function QuickCostEstimator({
-    companyId,
-    const { presets } = usePresetLibrary(companyId);
   companyId,
   employees,
   currency,
