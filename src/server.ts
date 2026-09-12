@@ -12,8 +12,11 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-    "Content-Security-Policy":
-      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://qhlqptgvizefbecsotvf.supabase.co wss://qhlqptgvizefbecsotvf.supabase.co; script-src 'self'",
+  "Content-Security-Policy":
+    // TanStack Start emits a request-specific inline hydration bootstrap. Keep
+    // inline scripts restricted to this response's document and do not allow
+    // any third-party script origins, which preserves hydration in production.
+    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://qhlqptgvizefbecsotvf.supabase.co wss://qhlqptgvizefbecsotvf.supabase.co; script-src 'self' 'unsafe-inline'",
 };
 
 function withSecurityHeaders(response: Response): Response {
