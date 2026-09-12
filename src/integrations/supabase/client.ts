@@ -218,8 +218,11 @@ export interface SupabaseClient {
     getUser(): Promise<{ data: { user: User | null }; error: any }>;
     signInWithPassword(credentials: { email: string; password: string }): Promise<{ data: { user: User | null; session: Session | null }; error: any }>;
     signUp(credentials: { email: string; password: string; options?: { data?: { full_name?: string }; emailRedirectTo?: string } }): Promise<{ data: { user: User | null; session: Session | null }; error: any }>;
+    verifyOtp(params: { email: string; token: string; type: "signup" }): Promise<{ data: { user: User | null; session: Session | null }; error: any }>;
+    resend(params: { type: "signup"; email: string }): Promise<{ data: any; error: any }>;
+    resetPasswordForEmail(email: string, options?: { redirectTo?: string }): Promise<{ data: any; error: any }>;
+    updateUser(attributes: { password: string }): Promise<{ data: { user: User | null }; error: any }>;
     signOut(): Promise<{ error: any }>;
-    signInWithOAuth(params: { provider: string; options?: any }): Promise<{ data: null; error: any }>;
     onAuthStateChange(callback: AuthStateListener): { data: { subscription: { unsubscribe: () => void } } };
   };
   from<TName extends keyof PublicTables>(table: TName): QueryBuilder<PublicTables[TName]["Row"]>;
@@ -288,6 +291,34 @@ const mysqlSupabase: SupabaseClient = {
       }
     },
 
+    async verifyOtp() {
+      return {
+        data: { user: null, session: null },
+        error: { message: "Email verification is only available with the Supabase backend." },
+      };
+    },
+
+    async resend() {
+      return {
+        data: null,
+        error: { message: "Email verification is only available with the Supabase backend." },
+      };
+    },
+
+    async resetPasswordForEmail() {
+      return {
+        data: null,
+        error: { message: "Password recovery is only available with the Supabase backend." },
+      };
+    },
+
+    async updateUser() {
+      return {
+        data: { user: null },
+        error: { message: "Password recovery is only available with the Supabase backend." },
+      };
+    },
+
     async signOut() {
       try {
         await apiFetch("/api/auth/logout", { method: "POST" });
@@ -297,13 +328,6 @@ const mysqlSupabase: SupabaseClient = {
       setStoredSession(null);
       notifyAuthListeners("SIGNED_OUT", null);
       return { error: null };
-    },
-
-    async signInWithOAuth(_params: { provider: string; options?: any }) {
-      return {
-        data: null,
-        error: { message: "OAuth sign-in is disabled. Please sign in with your email and password." },
-      };
     },
 
     onAuthStateChange(callback: AuthStateListener) {

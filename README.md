@@ -11,7 +11,8 @@ CostCraft is built with React 19, TanStack Start, TanStack Router, Vite, Tailwin
 ### Authentication and Workspaces
 
 - Email/password sign in and account creation through Supabase Auth.
-- Google OAuth support when the Google provider is enabled in Supabase.
+- Work-email verification with a six-digit signup OTP when the confirmation template is configured for OTP delivery.
+- Password reset by email.
 - Invitation links for joining an existing workspace.
 - Company/workspace setup with company name, industry, and base currency.
 - Role-aware access for administrators, finance, management, project managers, technical leads, calculator users, and viewers.
@@ -109,7 +110,7 @@ Valid duration units are `hours`, `days`, `weeks`, and `months`. Valid categorie
 ### Public routes
 
 - `/` - product landing page.
-- `/auth` - email/password and Google sign-in.
+- `/auth` - work-email sign-in, OTP-verified registration, and password recovery.
 - `/invite/:token` - invitation preview and acceptance.
 - `/guide` - costing and pricing guidance.
 
@@ -144,7 +145,6 @@ The application imports its client from `src/integrations/supabase/client.ts`. T
 - Node.js 20 or newer, or Bun 1.1 or newer.
 - A Supabase project with Auth and PostgreSQL enabled.
 - Supabase CLI 2.117 or newer for migration management.
-- Google OAuth credentials if Google sign-in is required.
 
 ## Installation
 
@@ -209,19 +209,9 @@ npx supabase db advisors --linked --type all
 
 The application expects the Supabase Data API to expose the `public` tables. RLS policies enforce company membership and role permissions; do not bypass RLS by using a secret key in browser code.
 
-## Google OAuth Setup
+## Email templates
 
-1. Create a Google OAuth web application in Google Cloud.
-2. In Supabase, open **Authentication > Providers > Google**.
-3. Add the Google client ID and client secret.
-4. Add the Supabase callback URL shown in the Supabase Auth provider settings to Google Cloud.
-5. Add the application callback URL to Supabase redirect URLs:
-
-```text
-http://127.0.0.1:8082/auth
-```
-
-Use the deployed HTTPS application URL in production. Google sign-in is disabled until the provider is enabled in Supabase.
+Branded Supabase email templates are kept in `supabase/email-templates/`. Apply `confirmation.html` to the Confirm sign up template and `recovery.html` to the Reset password template in Supabase Authentication > Emails. The confirmation template uses `{{ .Token }}` so registrations can be completed with a six-digit OTP.
 
 ## Development
 
@@ -255,7 +245,7 @@ Before deployment:
 1. Confirm `VITE_BACKEND=supabase` in the deployment environment.
 2. Apply and verify all Supabase migrations.
 3. Run Supabase advisors and review warnings.
-4. Verify email sign-in, workspace creation, invitation acceptance, and Google OAuth if enabled.
+4. Verify email sign-in, OTP registration, password recovery, workspace creation, and invitation acceptance.
 5. Add an employee with a monthly salary and non-company salary currency.
 6. Add monthly and yearly overheads and verify normalized totals.
 7. Import a custom preset from Settings and verify it appears in both calculators.
