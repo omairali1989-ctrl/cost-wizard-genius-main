@@ -1,10 +1,18 @@
 import * as React from "react";
+import { Plus, X } from "lucide-react";
 import { Field } from "@/components/ui/field";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { CURRENCY_OPTIONS } from "@/lib/currency";
 import {
   Dialog,
@@ -25,7 +33,7 @@ export interface EmployeeFormData {
   annual_salary: number;
   employer_cost_pct: number;
   billable_target_pct: number;
-  skills: string;
+  skills: string[];
   active: boolean;
 }
 
@@ -38,6 +46,28 @@ interface EmployeeDialogProps {
   onSave: (e: React.FormEvent) => void;
 }
 
+const COMMON_SKILLS = [
+  "React",
+  "TypeScript",
+  "Node.js",
+  "Python",
+  "Laravel",
+  "PHP",
+  "Next.js",
+  "Vue",
+  "Java",
+  "Flutter",
+  "React Native",
+  "AWS",
+  "Azure",
+  "GCP",
+  "Figma",
+  "PostgreSQL",
+  "MySQL",
+  "Docker",
+  "QA",
+];
+
 export const EmployeeDialog = React.memo(function EmployeeDialog({
   open,
   onOpenChange,
@@ -46,6 +76,45 @@ export const EmployeeDialog = React.memo(function EmployeeDialog({
   setForm,
   onSave,
 }: EmployeeDialogProps) {
+  const [skillDraft, setSkillDraft] = React.useState("");
+
+  React.useEffect(() => {
+    if (open) setSkillDraft("");
+  }, [open]);
+
+  const addSkill = (rawSkill: string) => {
+    const skill = rawSkill.trim().replace(/\s+/g, " ");
+    if (!skill) return;
+    setForm((prev) => {
+      if (prev.skills.some((existing) => existing.toLowerCase() === skill.toLowerCase())) {
+        return prev;
+      }
+      return { ...prev, skills: [...prev.skills, skill] };
+    });
+    setSkillDraft("");
+  };
+
+  const removeSkill = (skillToRemove: string) => {
+    setForm((prev) => ({
+      ...prev,
+      skills: prev.skills.filter((skill) => skill !== skillToRemove),
+    }));
+  };
+
+  const handleSkillDraftChange = (value: string) => {
+    if (!value.includes(",")) {
+      setSkillDraft(value);
+      return;
+    }
+    const parts = value.split(",");
+    parts.slice(0, -1).forEach(addSkill);
+    setSkillDraft(parts.at(-1) ?? "");
+  };
+
+  const availableSuggestions = COMMON_SKILLS.filter(
+    (suggestion) => !form.skills.some((skill) => skill.toLowerCase() === suggestion.toLowerCase()),
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
@@ -136,12 +205,55 @@ export const EmployeeDialog = React.memo(function EmployeeDialog({
               />
             </Field>
           </div>
-          <Field label="Skills" hint="Comma separated">
-            <Input
-              placeholder="React, Node.js, AWS"
-              value={form.skills}
-              onChange={(e) => setForm((prev) => ({ ...prev, skills: e.target.value }))}
-            />
+          <Field label="Skills" hint="Select several or type a skill and press Enter">
+            <div className="rounded-md border bg-background p-2 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+              <div className="flex min-h-9 flex-wrap items-center gap-1.5">
+                {form.skills.map((skill) => (
+                  <Badge key={skill} variant="secondary" className="gap-1 pr-1">
+                    {skill}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${skill}`}
+                      className="rounded-sm p-0.5 hover:bg-muted"
+                      onClick={() => removeSkill(skill)}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </Badge>
+                ))}
+                <Input
+                  className="h-8 min-w-[180px] flex-1 border-0 px-1 shadow-none focus-visible:ring-0"
+                  placeholder={form.skills.length ? "Add another skill" : "e.g. React"}
+                  value={skillDraft}
+                  onChange={(e) => handleSkillDraftChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      e.preventDefault();
+                      addSkill(skillDraft);
+                    } else if (e.key === "Backspace" && !skillDraft && form.skills.length) {
+                      removeSkill(form.skills.at(-1)!);
+                    }
+                  }}
+                  onBlur={() => addSkill(skillDraft)}
+                />
+              </div>
+            </div>
+            {availableSuggestions.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Suggestions</span>
+                {availableSuggestions.slice(0, 8).map((skill) => (
+                  <button
+                    key={skill}
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                    onClick={() => addSkill(skill)}
+                  >
+                    <Plus className="size-3" />
+                    {skill}
+                  </button>
+                ))}
+              </div>
+            )}
           </Field>
           <div className="flex items-center gap-3">
             <Switch

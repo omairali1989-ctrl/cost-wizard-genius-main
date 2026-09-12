@@ -62,7 +62,7 @@ const blank = {
   salary_currency: "PKR",
   employer_cost_pct: 20,
   billable_target_pct: 75,
-  skills: "",
+  skills: [] as string[],
   active: true,
 };
 
@@ -168,7 +168,7 @@ function PeopleFinance({ workspace }: { workspace: import("@/lib/workspace").Wor
       salary_currency: e.salary_currency || currency,
       employer_cost_pct: Number(e.employer_cost_pct),
       billable_target_pct: Number(e.billable_target_pct),
-      skills: (e.skills ?? []).join(", "),
+      skills: e.skills ?? [],
       active: e.active,
     });
     setOpen(true);
@@ -187,16 +187,16 @@ function PeopleFinance({ workspace }: { workspace: import("@/lib/workspace").Wor
       salary_currency: form.salary_currency || currency,
       employer_cost_pct: Number(form.employer_cost_pct) || 0,
       billable_target_pct: Number(form.billable_target_pct) || 0,
-      skills: form.skills
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
+      skills: form.skills.map((skill) => skill.trim()).filter(Boolean),
       active: form.active,
     };
     const { error, data } = editing
       ? await supabase.from("employees").update(payload).eq("id", editing.id).select("id").single()
       : await supabase.from("employees").insert(payload).select("id").single();
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     await logActivity(companyId, editing ? "updated" : "created", "employee", data?.id, {
       name: payload.name,
     });
@@ -207,7 +207,10 @@ function PeopleFinance({ workspace }: { workspace: import("@/lib/workspace").Wor
 
   const remove = async (e: EmployeeRecord) => {
     const { error } = await supabase.from("employees").delete().eq("id", e.id);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     await logActivity(companyId, "deleted", "employee", e.id, { name: e.name });
     invalidate(["employees"]);
     toast.success("Person removed");
@@ -292,7 +295,13 @@ function PeopleFinance({ workspace }: { workspace: import("@/lib/workspace").Wor
                       </div>
                     </TableCell>
                     <TableCell className="text-right tabular">
-                      <div>{formatMoney(Number(e.monthly_salary || Number(e.annual_salary) / 12), e.salary_currency || currency)} / mo</div>
+                      <div>
+                        {formatMoney(
+                          Number(e.monthly_salary || Number(e.annual_salary) / 12),
+                          e.salary_currency || currency,
+                        )}{" "}
+                        / mo
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {formatMoney(annualSalaryAmount(e), e.salary_currency || currency)} / yr
                       </div>
@@ -300,7 +309,10 @@ function PeopleFinance({ workspace }: { workspace: import("@/lib/workspace").Wor
                     <TableCell className="text-right tabular">{e.billable_target_pct}%</TableCell>
                     <TableCell className="text-right font-medium tabular">
                       {workspace.policy
-                        ? formatMoney(hourlyCostFor(e, workspace.policy, ohPerEmployee, currency), currency)
+                        ? formatMoney(
+                            hourlyCostFor(e, workspace.policy, ohPerEmployee, currency),
+                            currency,
+                          )
                         : "—"}
                     </TableCell>
                     <TableCell className="text-right">
