@@ -239,7 +239,7 @@ Vite binds to localhost by default. If ports `8080` and `8081` are busy, Vite se
 npm run dev                 # Start Vite development server
 npm run build               # Create a production build
 npm run build:dev           # Create a development-mode build
-npm run preview             # Preview the production build
+npm run preview             # Preview the production build (PORT=3000 by default)
 npm run lint                # Run ESLint across the repository
 npm run format              # Format the repository with Prettier
 npm run db:init             # Initialize the legacy local MySQL schema
