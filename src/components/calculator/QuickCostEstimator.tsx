@@ -37,6 +37,7 @@ export type { PresetCategory } from "./qce/types";
 
 interface QuickCostEstimatorProps {
     companyId?: string;
+  companyId?: string;
   employees: TeamMemberRate[];
   currency: string;
   marginPct: number;
@@ -49,6 +50,7 @@ interface QuickCostEstimatorProps {
 export const QuickCostEstimator = React.memo(function QuickCostEstimator({
     companyId,
     const { presets } = usePresetLibrary(companyId);
+  companyId,
   employees,
   currency,
   marginPct,
@@ -57,7 +59,7 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
   onApplyPreset,
   onSync,
 }: QuickCostEstimatorProps) {
-  const { presets } = usePresetLibrary();
+  const { presets } = usePresetLibrary(companyId);
   // ─── Core state ──────────────────────────────────────────────────────────
   const [selectedPreset, setSelectedPreset] =
     React.useState<ProjectPresetId>("mvp");

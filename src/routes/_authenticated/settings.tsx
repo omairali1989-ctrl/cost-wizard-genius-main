@@ -406,7 +406,7 @@ function SettingsInner({ workspace }: { workspace: WorkspaceData }) {
                   <p className="text-xs text-muted-foreground mt-1 max-w-xl">
                     You can maintain this library completely through structured JSON. The manager
                     provides the exact schema template, sample files, and live validation before
-                    importing directly to your MySQL database.
+                    importing directly to your Supabase workspace database.
                   </p>
                 </div>
                 <Button
@@ -422,8 +422,8 @@ function SettingsInner({ workspace }: { workspace: WorkspaceData }) {
                 <div>
                   <h4 className="font-semibold text-sm">Estimate presets</h4>
                   <p className="text-xs text-muted-foreground mt-1 max-w-xl">
-                    Import a JSON array of presets. Imported presets replace the current local
-                    preset library in both calculators.
+                    Import a JSON array of presets. Imported presets are shared with both
+                    calculators in this workspace.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

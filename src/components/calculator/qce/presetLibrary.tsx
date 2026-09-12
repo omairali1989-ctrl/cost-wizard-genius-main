@@ -22,8 +22,8 @@ function normalizePreset(value: unknown, index: number): PresetConfig {
     throw new Error(`Preset ${index + 1} must be an object.`);
   }
   const preset = value as Partial<PresetJson>;
-  if (!preset.id || !preset.title || !preset.description) {
-    throw new Error(`Preset ${index + 1} needs id, title, and description.`);
+  if (!preset.id || !preset.title || !preset.description || !preset.defaultDurationValue) {
+    throw new Error(`Preset ${index + 1} needs id, title, description, and duration.`);
   }
   if (!TIME_UNITS.includes(preset.defaultDurationUnit as TimeUnit)) {
     throw new Error(`Preset ${preset.id} has an invalid defaultDurationUnit.`);
@@ -67,7 +67,9 @@ function serializePreset({ icon: _icon, ...preset }: PresetConfig): Record<strin
 function mergePresets(customPresets: PresetConfig[]): PresetConfig[] {
   const customById = new Map(customPresets.map((preset) => [preset.id, preset]));
   const builtIns = PRESETS.map((preset) => customById.get(preset.id) ?? preset);
-  const customOnly = customPresets.filter((preset) => !PRESETS.some((builtIn) => builtIn.id === preset.id));
+  const customOnly = customPresets.filter(
+    (preset) => !PRESETS.some((builtIn) => builtIn.id === preset.id),
+  );
   return [...builtIns, ...customOnly];
 }
 
@@ -145,105 +147,4 @@ export function usePresetLibrary(companyId?: string) {
   };
 
   return { presets, importPresets, deletePreset, resetPresets };
-}
-import * as React from "react";
-import { Sliders } from "lucide-react";
-import { PRESETS } from "./presets";
-import type { PresetConfig, PresetCategory } from "./types";
-import type { TimeUnit } from "@/lib/pricing";
-
-const STORAGE_KEY = "costcraft.preset-library";
-const TIME_UNITS: TimeUnit[] = ["hours", "days", "weeks", "months"];
-const CATEGORIES: PresetCategory[] = [
-  "Mobile & Backend",
-  "CMS & E-Commerce",
-  "Design & Creatives",
-  "Startups & Custom",
-];
-
-type PresetJson = Omit<PresetConfig, "icon"> & { icon?: unknown };
-
-function normalizePreset(value: unknown, index: number): PresetConfig {
-  if (!value || typeof value !== "object")
-    throw new Error(`Preset ${index + 1} must be an object.`);
-  const preset = value as Partial<PresetJson>;
-  if (!preset.id || !preset.title || !preset.description) {
-    throw new Error(`Preset ${index + 1} needs id, title, and description.`);
-  }
-  if (!TIME_UNITS.includes(preset.defaultDurationUnit as TimeUnit)) {
-    throw new Error(`Preset ${preset.id} has an invalid defaultDurationUnit.`);
-  }
-  const category = CATEGORIES.includes(preset.category as PresetCategory)
-    ? (preset.category as PresetCategory)
-    : "Startups & Custom";
-  const suggestedRoles = Array.isArray(preset.suggestedRoles) ? preset.suggestedRoles : [];
-  return {
-    ...(preset as Omit<PresetConfig, "icon">),
-    id: String(preset.id),
-    category,
-    badge: String(preset.badge || "Custom"),
-    title: String(preset.title),
-    description: String(preset.description),
-    icon: <Sliders className="size-5 text-slate-500" />,
-    defaultDurationValue: Number(preset.defaultDurationValue) || 1,
-    defaultDurationUnit: preset.defaultDurationUnit as TimeUnit,
-    suggestedRoles: suggestedRoles.map((role) => ({
-      nameSubstr: String(role.nameSubstr || ""),
-      label: String(role.label || role.nameSubstr || "Role"),
-      allocationPct: Number(role.allocationPct) || 0,
-    })),
-  };
-}
-
-export function parsePresetJson(value: unknown): PresetConfig[] {
-  const list = Array.isArray(value)
-    ? value
-    : value && typeof value === "object" && Array.isArray((value as { presets?: unknown }).presets)
-      ? (value as { presets: unknown[] }).presets
-      : null;
-  if (!list?.length) throw new Error("JSON must contain a non-empty presets array.");
-  return list.map(normalizePreset);
-}
-
-function readStoredPresets(): PresetConfig[] {
-  if (typeof window === "undefined") return PRESETS;
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (!stored) return PRESETS;
-  try {
-    return parsePresetJson(JSON.parse(stored));
-  } catch {
-    return PRESETS;
-  }
-}
-
-export function savePresetLibrary(presets: PresetConfig[]): void {
-  const serializable = presets.map(({ icon: _icon, ...preset }) => preset);
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
-  window.dispatchEvent(new Event("costcraft:preset-library"));
-}
-
-export function usePresetLibrary() {
-  const [presets, setPresets] = React.useState<PresetConfig[]>(PRESETS);
-
-  React.useEffect(() => {
-    const refresh = () => setPresets(readStoredPresets());
-    refresh();
-    window.addEventListener("costcraft:preset-library", refresh);
-    return () => window.removeEventListener("costcraft:preset-library", refresh);
-  }, []);
-
-  return {
-    presets,
-    importPresets: (value: unknown) => {
-      const imported = parsePresetJson(value);
-      savePresetLibrary(imported);
-      setPresets(imported);
-      return imported.length;
-    },
-    resetPresets: () => {
-      window.localStorage.removeItem(STORAGE_KEY);
-      setPresets(PRESETS);
-      window.dispatchEvent(new Event("costcraft:preset-library"));
-    },
-  };
 }
