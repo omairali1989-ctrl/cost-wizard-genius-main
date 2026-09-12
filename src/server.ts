@@ -1,5 +1,6 @@
 import "./lib/error-capture";
 
+import { randomBytes } from "node:crypto";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
@@ -7,23 +8,56 @@ type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
 
+const SUPABASE_ORIGIN = "https://qhlqptgvizefbecsotvf.supabase.co";
+
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-  "Content-Security-Policy":
-    // TanStack Start emits a request-specific inline hydration bootstrap. Keep
-    // inline scripts restricted to this response's document and do not allow
-    // any third-party script origins, which preserves hydration in production.
-    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://qhlqptgvizefbecsotvf.supabase.co wss://qhlqptgvizefbecsotvf.supabase.co; script-src 'self' 'unsafe-inline'",
+  "Content-Security-Policy": createContentSecurityPolicy(),
 };
 
-function withSecurityHeaders(response: Response): Response {
+function createContentSecurityPolicy(nonce?: string): string {
+  const scriptSource = nonce ? `'self' 'nonce-${nonce}'` : "'none'";
+  return `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' ${SUPABASE_ORIGIN} wss://qhlqptgvizefbecsotvf.supabase.co; script-src ${scriptSource}`;
+}
+
+function createCspNonce(): string {
+  return randomBytes(18).toString("base64");
+}
+
+async function withSecurityHeaders(response: Response): Promise<Response> {
   const headers = new Headers(response.headers);
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
-  if (process.env["NODE_ENV"] === "production") headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  if (process.env["NODE_ENV"] === "production") {
+    headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+
+  if (!headers.get("content-type")?.includes("text/html")) {
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  const nonce = createCspNonce();
+  headers.set("Content-Security-Policy", createContentSecurityPolicy(nonce));
+  headers.delete("content-length");
+  headers.delete("etag");
+
+  const html = await response.text();
+  const nonceMeta = `<meta property="csp-nonce" content="${nonce}">`;
+  const htmlWithNonce = html
+    .replace(/<head>/i, `<head>${nonceMeta}`)
+    .replace(/<script(?=[\s>])/gi, `<script nonce="${nonce}"`);
+
+  return new Response(htmlWithNonce, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 let serverEntryPromise: Promise<ServerEntry> | undefined;
