@@ -19,6 +19,7 @@ import { Route as AuthenticatedCompareRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedGuideRouteImport } from './routes/_authenticated/guide'
 import { Route as AuthenticatedPeopleRouteImport } from './routes/_authenticated/people'
+import { Route as AuthenticatedScopeBlueprintsRouteImport } from './routes/_authenticated/scope-blueprints'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/setup'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
@@ -74,6 +75,12 @@ const AuthenticatedPeopleRoute = AuthenticatedPeopleRouteImport.update({
   path: '/people',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedScopeBlueprintsRoute =
+  AuthenticatedScopeBlueprintsRouteImport.update({
+    id: '/scope-blueprints',
+    path: '/scope-blueprints',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -111,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/guide': typeof AuthenticatedGuideRoute
   '/people': typeof AuthenticatedPeopleRoute
+  '/scope-blueprints': typeof AuthenticatedScopeBlueprintsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -127,6 +135,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/guide': typeof AuthenticatedGuideRoute
   '/people': typeof AuthenticatedPeopleRoute
+  '/scope-blueprints': typeof AuthenticatedScopeBlueprintsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -145,6 +154,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/guide': typeof AuthenticatedGuideRoute
   '/_authenticated/people': typeof AuthenticatedPeopleRoute
+  '/_authenticated/scope-blueprints': typeof AuthenticatedScopeBlueprintsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/setup': typeof AuthenticatedSetupRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -163,6 +173,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/guide'
     | '/people'
+    | '/scope-blueprints'
     | '/settings'
     | '/setup'
     | '/invite/$token'
@@ -179,6 +190,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/guide'
     | '/people'
+    | '/scope-blueprints'
     | '/settings'
     | '/setup'
     | '/invite/$token'
@@ -196,6 +208,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard'
     | '/_authenticated/guide'
     | '/_authenticated/people'
+    | '/_authenticated/scope-blueprints'
     | '/_authenticated/settings'
     | '/_authenticated/setup'
     | '/invite/$token'
@@ -283,6 +296,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPeopleRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/scope-blueprints': {
+      id: '/_authenticated/scope-blueprints'
+      path: '/scope-blueprints'
+      fullPath: '/scope-blueprints'
+      preLoaderRoute: typeof AuthenticatedScopeBlueprintsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
       path: '/settings'
@@ -328,6 +348,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedGuideRoute: typeof AuthenticatedGuideRoute
   AuthenticatedPeopleRoute: typeof AuthenticatedPeopleRoute
+  AuthenticatedScopeBlueprintsRoute: typeof AuthenticatedScopeBlueprintsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
   AuthenticatedProjectsIdRoute: typeof AuthenticatedProjectsIdRoute
@@ -341,6 +362,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedGuideRoute: AuthenticatedGuideRoute,
   AuthenticatedPeopleRoute: AuthenticatedPeopleRoute,
+  AuthenticatedScopeBlueprintsRoute: AuthenticatedScopeBlueprintsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSetupRoute: AuthenticatedSetupRoute,
   AuthenticatedProjectsIdRoute: AuthenticatedProjectsIdRoute,

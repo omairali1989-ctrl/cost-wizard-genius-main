@@ -55,7 +55,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/ui/field";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { CalculatorBasics } from "@/components/calculator/CalculatorBasics";
 import { CalculatorPhases } from "@/components/calculator/CalculatorPhases";
 import { CalculatorSupport } from "@/components/calculator/CalculatorSupport";
@@ -243,13 +248,16 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
-  const handleSelectVersion = useCallback((record: CalculationRecord) => {
-    if (record.inputs) {
-      setInputs(record.inputs);
-      setLoadedVersion(record.version);
-      goToStep(5);
-    }
-  }, [goToStep]);
+  const handleSelectVersion = useCallback(
+    (record: CalculationRecord) => {
+      if (record.inputs) {
+        setInputs(record.inputs);
+        setLoadedVersion(record.version);
+        goToStep(5);
+      }
+    },
+    [goToStep],
+  );
 
   const nextStep = useCallback(() => {
     setCompletedSteps((prev) => new Set([...prev, currentStep]));
@@ -277,7 +285,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
             item.tech,
             item.category,
             employees,
-            item.suggestedEmployeeSubstr
+            item.suggestedEmployeeSubstr,
           );
           return {
             id: item.id,
@@ -285,7 +293,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
             category: item.category,
             roleLabel: item.roleLabel,
             allocationPct: item.allocationPct,
-            employeeId: emp?.id ?? (employees[0]?.id ?? ""),
+            employeeId: emp?.id ?? employees[0]?.id ?? "",
           };
         });
         setActiveStack(linked);
@@ -297,10 +305,10 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
         preset.defaultDurationUnit === "days"
           ? preset.defaultDurationValue * 8
           : preset.defaultDurationUnit === "weeks"
-          ? preset.defaultDurationValue * 40
-          : preset.defaultDurationUnit === "months"
-          ? preset.defaultDurationValue * 160
-          : preset.defaultDurationValue;
+            ? preset.defaultDurationValue * 40
+            : preset.defaultDurationUnit === "months"
+              ? preset.defaultDurationValue * 160
+              : preset.defaultDurationValue;
 
       const designAllocations: Allocation[] = [];
       const devAllocations: Allocation[] = [];
@@ -308,7 +316,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
 
       for (const s of preset.suggestedRoles) {
         const emp = employees.find((e) =>
-          e.name.toLowerCase().includes(s.nameSubstr.toLowerCase())
+          e.name.toLowerCase().includes(s.nameSubstr.toLowerCase()),
         );
         if (!emp) continue;
         const hours = Math.round(durationHours * (s.allocationPct / 100));
@@ -369,7 +377,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
       }));
       toast.success(`✨ Loaded "${preset.title}" blueprint with team allocations!`);
     },
-    [employees]
+    [employees],
   );
 
   // ─── Apply Stack to Squad (generates phases from activeStack) ──────────────
@@ -384,10 +392,10 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
       ? selectedPreset.defaultDurationUnit === "days"
         ? selectedPreset.defaultDurationValue * 8
         : selectedPreset.defaultDurationUnit === "weeks"
-        ? selectedPreset.defaultDurationValue * 40
-        : selectedPreset.defaultDurationUnit === "months"
-        ? selectedPreset.defaultDurationValue * 160
-        : selectedPreset.defaultDurationValue
+          ? selectedPreset.defaultDurationValue * 40
+          : selectedPreset.defaultDurationUnit === "months"
+            ? selectedPreset.defaultDurationValue * 160
+            : selectedPreset.defaultDurationValue
       : 160; // default 1 month
 
     const designAllocs: Allocation[] = [];
@@ -446,22 +454,37 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
       }
     }
 
-
     const phases: Phase[] = [];
     if (designAllocs.length > 0) {
-      phases.push({ id: "phase-stack-design", name: "UI/UX Design & Prototyping", allocations: designAllocs });
+      phases.push({
+        id: "phase-stack-design",
+        name: "UI/UX Design & Prototyping",
+        allocations: designAllocs,
+      });
     }
     if (mobileAllocs.length > 0) {
-      phases.push({ id: "phase-stack-mobile", name: "Mobile App Development", allocations: mobileAllocs });
+      phases.push({
+        id: "phase-stack-mobile",
+        name: "Mobile App Development",
+        allocations: mobileAllocs,
+      });
     }
     if (devAllocs.length > 0) {
-      phases.push({ id: "phase-stack-dev", name: "Engineering & Backend Development", allocations: devAllocs });
+      phases.push({
+        id: "phase-stack-dev",
+        name: "Engineering & Backend Development",
+        allocations: devAllocs,
+      });
     }
     if (qaAllocs.length > 0) {
       phases.push({ id: "phase-stack-qa", name: "QA, Testing & DevOps", allocations: qaAllocs });
     }
     if (mgmtAllocs.length > 0) {
-      phases.push({ id: "phase-stack-mgmt", name: "Project Management & Delivery", allocations: mgmtAllocs });
+      phases.push({
+        id: "phase-stack-mgmt",
+        name: "Project Management & Delivery",
+        allocations: mgmtAllocs,
+      });
     }
 
     setInputs((prev) => ({
@@ -469,33 +492,37 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
       phases: phases.length > 0 ? phases : prev.phases,
     }));
     setStackApplied(true);
-    toast.success(`🚀 Stack applied! ${phases.length} phases with ${activeStack.length} tech layers synced to Step 3.`);
+    toast.success(
+      `🚀 Stack applied! ${phases.length} phases with ${activeStack.length} tech layers synced to Step 3.`,
+    );
   }, [activeStack, employees, selectedPresetId]);
 
   // ─── Scope Application ─────────────────────────────────────────────────────
 
-  const handleApplyScope = useCallback((scopeInputs: Partial<CalculationInputs>) => {
-    setInputs((prev) => ({
-      ...prev,
-      ...scopeInputs,
-      projectName:
-        prev.projectName && prev.projectName.trim() !== "New Project" && prev.projectName.trim() !== ""
-          ? prev.projectName
-          : (scopeInputs.projectName || prev.projectName),
-    }));
-    setCompletedSteps((prev) => new Set([...prev, 2]));
-    goToStep(3);
-    toast.success("✅ Scope applied! Review and fine-tune team allocations in Step 3.");
-  }, [goToStep]);
+  const handleApplyScope = useCallback(
+    (scopeInputs: Partial<CalculationInputs>) => {
+      setInputs((prev) => ({
+        ...prev,
+        ...scopeInputs,
+        projectName:
+          prev.projectName &&
+          prev.projectName.trim() !== "New Project" &&
+          prev.projectName.trim() !== ""
+            ? prev.projectName
+            : scopeInputs.projectName || prev.projectName,
+      }));
+      setCompletedSteps((prev) => new Set([...prev, 2]));
+      goToStep(3);
+      toast.success("✅ Scope applied! Review and fine-tune team allocations in Step 3.");
+    },
+    [goToStep],
+  );
 
   // ─── Phase Handlers ────────────────────────────────────────────────────────
   const handleAddPhase = useCallback(() => {
     setInputs((prev) => ({
       ...prev,
-      phases: [
-        ...prev.phases,
-        { id: `phase-${Date.now()}`, name: "New Phase", allocations: [] },
-      ],
+      phases: [...prev.phases, { id: `phase-${Date.now()}`, name: "New Phase", allocations: [] }],
     }));
   }, []);
 
@@ -572,32 +599,24 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
     }));
   }, []);
 
-  const handleSupportChange = useCallback(
-    (supportPatch: Partial<CalculationInputs["support"]>) => {
-      setInputs((prev) => ({
-        ...prev,
-        support: { ...prev.support, ...supportPatch },
-      }));
-    },
-    [],
-  );
+  const handleSupportChange = useCallback((supportPatch: Partial<CalculationInputs["support"]>) => {
+    setInputs((prev) => ({
+      ...prev,
+      support: { ...prev.support, ...supportPatch },
+    }));
+  }, []);
 
   const handleAddAdditionalWork = useCallback(() => {
     setInputs((prev) => ({
       ...prev,
-      additionalWork: [
-        ...prev.additionalWork,
-        { id: `work-${Date.now()}`, label: "", amount: 0 },
-      ],
+      additionalWork: [...prev.additionalWork, { id: `work-${Date.now()}`, label: "", amount: 0 }],
     }));
   }, []);
 
   const handleUpdateAdditionalWork = useCallback((id: string, itemPatch: Partial<LineItem>) => {
     setInputs((prev) => ({
       ...prev,
-      additionalWork: prev.additionalWork.map((i) =>
-        i.id === id ? { ...i, ...itemPatch } : i,
-      ),
+      additionalWork: prev.additionalWork.map((i) => (i.id === id ? { ...i, ...itemPatch } : i)),
     }));
   }, []);
 
@@ -712,13 +731,11 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
 
       setLoadedVersion(nextVersion);
       await queryClient.invalidateQueries({ queryKey: ["project-versions", targetId] });
-      await logActivity(
-        companyId,
-        "saved_version",
-        "calculation",
-        targetId,
-        { name: inputs.projectName, version: nextVersion, label },
-      );
+      await logActivity(companyId, "saved_version", "calculation", targetId, {
+        name: inputs.projectName,
+        version: nextVersion,
+        label,
+      });
       toast.success(`✨ Version ${nextVersion} saved successfully!`, {
         description: label,
         action: {
@@ -727,14 +744,23 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
         },
       });
     },
-    [workspace.canEdit, workspace.userId, blocking, activeProjectId, inputs, results, companyId, queryClient, navigate]
+    [
+      workspace.canEdit,
+      workspace.userId,
+      blocking,
+      activeProjectId,
+      inputs,
+      results,
+      companyId,
+      queryClient,
+      navigate,
+    ],
   );
 
   // Filtered presets for Step 1
   const filteredPresets = useMemo(() => {
     return presets.filter((p) => {
-      const matchCat =
-        selectedPresetCategory === "All" || p.category === selectedPresetCategory;
+      const matchCat = selectedPresetCategory === "All" || p.category === selectedPresetCategory;
       const matchSearch =
         !presetSearch.trim() ||
         p.title.toLowerCase().includes(presetSearch.toLowerCase()) ||
@@ -824,8 +850,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                     isActive
                       ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/30"
                       : isDone
-                      ? "border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10"
-                      : "border-border/70 hover:bg-muted/50"
+                        ? "border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10"
+                        : "border-border/70 hover:bg-muted/50",
                   )}
                 >
                   <div
@@ -834,8 +860,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                       isActive
                         ? "bg-primary text-primary-foreground"
                         : isDone
-                        ? "bg-emerald-500 text-white"
-                        : "bg-muted text-muted-foreground"
+                          ? "bg-emerald-500 text-white"
+                          : "bg-muted text-muted-foreground",
                     )}
                   >
                     {isDone ? <Check className="size-3.5" /> : s.icon}
@@ -871,10 +897,13 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
               <div className="rounded-xl border bg-gradient-to-br from-violet-500/10 via-card to-background p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xl">📋</span>
-                  <h2 className="font-display font-bold text-lg">Step 1: Project Basics & Scope Blueprint</h2>
+                  <h2 className="font-display font-bold text-lg">
+                    Step 1: Project Basics & Scope Blueprint
+                  </h2>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Give your project a name and choose an industry scope blueprint (MVP, Mobile, SaaS, E-Commerce) to auto-configure initial team allocations.
+                  Give your project a name and choose an industry scope blueprint (MVP, Mobile,
+                  SaaS, E-Commerce) to auto-configure initial team allocations.
                 </p>
               </div>
 
@@ -896,7 +925,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                         Select a Software Scope Blueprint
                       </CardTitle>
                       <CardDescription className="text-xs">
-                        Clicking a blueprint automatically loads recommended team roles and timeline estimates.
+                        Clicking a blueprint automatically loads recommended team roles and timeline
+                        estimates.
                       </CardDescription>
                     </div>
 
@@ -920,7 +950,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                           "rounded-full px-2.5 py-0.5 text-xs font-medium border transition-all cursor-pointer",
                           selectedPresetCategory === cat
                             ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                            : "bg-card hover:bg-muted border-border text-muted-foreground"
+                            : "bg-card hover:bg-muted border-border text-muted-foreground",
                         )}
                       >
                         {cat}
@@ -941,7 +971,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                             "rounded-xl border p-3.5 text-left transition-all cursor-pointer relative hover:shadow-sm",
                             isSelected
                               ? "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-xs"
-                              : "border-border/80 bg-card hover:border-primary/50"
+                              : "border-border/80 bg-card hover:border-primary/50",
                           )}
                         >
                           <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -1002,7 +1032,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                   currency={currency}
                   onUpdateStackItem={(id, updates) =>
                     setActiveStack((prev) =>
-                      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+                      prev.map((item) => (item.id === id ? { ...item, ...updates } : item)),
                     )
                   }
                   onAddStackItem={(item) => setActiveStack((prev) => [...prev, item])}
@@ -1017,7 +1047,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                         item.tech,
                         item.category,
                         employees,
-                        item.suggestedEmployeeSubstr
+                        item.suggestedEmployeeSubstr,
                       );
                       return {
                         id: item.id,
@@ -1025,7 +1055,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                         category: item.category,
                         roleLabel: item.roleLabel,
                         allocationPct: item.allocationPct,
-                        employeeId: emp?.id ?? (employees[0]?.id ?? ""),
+                        employeeId: emp?.id ?? employees[0]?.id ?? "",
                       };
                     });
                     setActiveStack(linked);
@@ -1053,15 +1083,19 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
               <div className="rounded-xl border bg-gradient-to-br from-violet-500/10 via-card to-background p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xl">🎯</span>
-                  <h2 className="font-display font-bold text-lg">Step 2: Interactive Scope of Work Engine</h2>
+                  <h2 className="font-display font-bold text-lg">
+                    Step 2: Interactive Scope of Work Engine
+                  </h2>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Drag and drop features into phase buckets or click to select. Effort hours per role and live loaded labor costs adjust dynamically from MySQL.
+                  Drag and drop features into phase buckets or click to select. Effort hours per
+                  role and live loaded labor costs adjust dynamically from MySQL.
                 </p>
               </div>
 
               <ScopeEngine
                 companyId={companyId}
+                canManage={workspace.canManageCosts}
                 projectName={inputs.projectName}
                 employees={employees}
                 currency={currency}
@@ -1089,10 +1123,13 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
               <div className="rounded-xl border bg-gradient-to-br from-violet-500/10 via-card to-background p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xl">👥</span>
-                  <h2 className="font-display font-bold text-lg">Step 3: Team Squad & Phase Allocations</h2>
+                  <h2 className="font-display font-bold text-lg">
+                    Step 3: Team Squad & Phase Allocations
+                  </h2>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Fine-tune individual allocations, team durations, and milestone phases. Add available employees with loaded hourly rates.
+                  Fine-tune individual allocations, team durations, and milestone phases. Add
+                  available employees with loaded hourly rates.
                 </p>
               </div>
 
@@ -1129,10 +1166,13 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
               <div className="rounded-xl border bg-gradient-to-br from-violet-500/10 via-card to-background p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xl">🛡️</span>
-                  <h2 className="font-display font-bold text-lg">Step 4: Retainer, Extras, Risk & Pricing</h2>
+                  <h2 className="font-display font-bold text-lg">
+                    Step 4: Retainer, Extras, Risk & Pricing
+                  </h2>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Configure post-launch maintenance, cloud software licenses, contingency buffer, company profit margin, and sales commission.
+                  Configure post-launch maintenance, cloud software licenses, contingency buffer,
+                  company profit margin, and sales commission.
                 </p>
               </div>
 
@@ -1140,7 +1180,9 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                 {/* Support & Retainer */}
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="font-display text-base">Support & Maintenance Retainer</CardTitle>
+                    <CardTitle className="font-display text-base">
+                      Support & Maintenance Retainer
+                    </CardTitle>
                     <CardDescription className="text-xs">
                       Post-delivery retainer package with dedicated hours per month.
                     </CardDescription>
@@ -1153,7 +1195,9 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                 {/* Extras & Technology */}
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="font-display text-base">Additional Work & Technology Tools</CardTitle>
+                    <CardTitle className="font-display text-base">
+                      Additional Work & Technology Tools
+                    </CardTitle>
                     <CardDescription className="text-xs">
                       Third-party API subscriptions, AWS cloud hosting, and domain/SSL setup.
                     </CardDescription>
@@ -1175,7 +1219,9 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                 {/* Risk & Pricing */}
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="font-display text-base">Risk Buffer, Margin & Sales Commission</CardTitle>
+                    <CardTitle className="font-display text-base">
+                      Risk Buffer, Margin & Sales Commission
+                    </CardTitle>
                     <CardDescription className="text-xs">
                       Set contingency %, target margin %, and sales commission (Ayesha Badar 5%).
                     </CardDescription>
@@ -1214,10 +1260,13 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xl">📊</span>
-                    <h2 className="font-display font-bold text-lg">Step 5: Executive Proposal & Rate Breakdown</h2>
+                    <h2 className="font-display font-bold text-lg">
+                      Step 5: Executive Proposal & Rate Breakdown
+                    </h2>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Complete executive rate matrix, department resource distribution, absorbed overhead statement, and financial waterfall.
+                    Complete executive rate matrix, department resource distribution, absorbed
+                    overhead statement, and financial waterfall.
                   </p>
                 </div>
 
@@ -1249,8 +1298,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                     {saving
                       ? "Saving..."
                       : activeProjectId
-                      ? `Save as v${(projectVersions[0]?.version ?? 0) + 1}`
-                      : "Save Estimate to DB"}
+                        ? `Save as v${(projectVersions[0]?.version ?? 0) + 1}`
+                        : "Save Estimate to DB"}
                   </Button>
                 </div>
               </div>
@@ -1289,8 +1338,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                       {saving
                         ? "Saving to Database..."
                         : activeProjectId
-                        ? `Save as Version ${(projectVersions[0]?.version ?? 0) + 1}`
-                        : "Save & Finalize Estimate"}
+                          ? `Save as Version ${(projectVersions[0]?.version ?? 0) + 1}`
+                          : "Save & Finalize Estimate"}
                     </span>
                   </Button>
                 </div>
@@ -1332,6 +1381,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                   <AccordionContent className="pt-2 pb-4">
                     <ScopeEngine
                       companyId={companyId}
+                      canManage={workspace.canManageCosts}
                       projectName={inputs.projectName}
                       employees={employees}
                       currency={currency}
@@ -1467,13 +1517,22 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
             {/* Step controls */}
             <div className="flex items-center gap-2 ml-auto">
               {currentStep > 1 && (
-                <Button size="sm" variant="outline" onClick={prevStep} className="h-8 gap-1 text-xs">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={prevStep}
+                  className="h-8 gap-1 text-xs"
+                >
                   <ArrowLeft className="size-3.5" /> Back
                 </Button>
               )}
 
               {currentStep < 5 ? (
-                <Button size="sm" onClick={nextStep} className="h-8 gap-1.5 text-xs font-semibold shadow-xs">
+                <Button
+                  size="sm"
+                  onClick={nextStep}
+                  className="h-8 gap-1.5 text-xs font-semibold shadow-xs"
+                >
                   <span>Next Step</span>
                   <ArrowRight className="size-3.5" />
                 </Button>
@@ -1488,8 +1547,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                   {saving
                     ? "Saving..."
                     : activeProjectId
-                    ? `Save v${(projectVersions[0]?.version ?? 0) + 1}`
-                    : "Save Estimate"}
+                      ? `Save v${(projectVersions[0]?.version ?? 0) + 1}`
+                      : "Save Estimate"}
                 </Button>
               )}
 

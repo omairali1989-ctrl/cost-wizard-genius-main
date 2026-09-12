@@ -10,6 +10,7 @@ import {
   Scale,
   Settings2,
   BookOpen,
+  Layers,
   Users,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -28,6 +29,7 @@ const NAV = [
   { to: "/projects", label: "Projects", icon: FolderKanban, perm: "always" },
   { to: "/compare", label: "Compare scenarios", icon: Scale, perm: "always" },
   { to: "/people", label: "People & costs", icon: Users, perm: "finance" },
+  { to: "/scope-blueprints", label: "Scope blueprints", icon: Layers, perm: "always" },
   { to: "/settings", label: "Company settings", icon: Settings2, perm: "always" },
   { to: "/activity", label: "Activity trail", icon: History, perm: "always" },
   { to: "/guide", label: "How it works", icon: BookOpen, perm: "always" },
@@ -36,8 +38,7 @@ const NAV = [
 export function AppShell({ children }: { children: ReactNode }) {
   const { data: workspace } = useWorkspace();
   const allowed = (perm: Perm) =>
-    perm === "always" ||
-    (perm === "edit" ? !!workspace?.canEdit : !!workspace?.canViewFinance);
+    perm === "always" || (perm === "edit" ? !!workspace?.canEdit : !!workspace?.canViewFinance);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const queryClient = useQueryClient();

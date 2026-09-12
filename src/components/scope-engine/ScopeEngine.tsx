@@ -28,13 +28,7 @@ import {
 import { FeatureLibraryManager } from "./FeatureLibraryManager";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -51,11 +45,7 @@ import { formatMoney } from "@/lib/pricing";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  useScopeFeatures,
-  type ScopeFeatureRecord,
-  type TeamRate,
-} from "@/lib/workspace";
+import { useScopeFeatures, type ScopeFeatureRecord, type TeamRate } from "@/lib/workspace";
 import {
   FEATURE_LIBRARY,
   CATEGORY_META,
@@ -88,6 +78,7 @@ interface EffortSummary {
 
 interface ScopeEngineProps {
   companyId?: string;
+  canManage?: boolean;
   projectName?: string;
   employees: TeamRate[];
   currency: string;
@@ -98,17 +89,14 @@ interface ScopeEngineProps {
 }
 
 // ─── Role → employee matcher ──────────────────────────────────────────────────
-function matchEmployeeForRole(
-  role: RoleKey,
-  employees: TeamRate[]
-): TeamRate | undefined {
+function matchEmployeeForRole(role: RoleKey, employees: TeamRate[]): TeamRate | undefined {
   const kw: Record<RoleKey, string[]> = {
     designer: ["design", "ui", "ux", "figma", "creative"],
     frontend: ["frontend", "front-end", "react", "mern", "next", "vue"],
-    backend:  ["backend", "back-end", "laravel", "php", "node", "api", "mern"],
-    mobile:   ["mobile", "flutter", "react native", "android", "ios", "app"],
-    pm:       ["project manager", "pm", "manager", "lead", "director"],
-    qa:       ["qa", "quality", "test", "tester"],
+    backend: ["backend", "back-end", "laravel", "php", "node", "api", "mern"],
+    mobile: ["mobile", "flutter", "react native", "android", "ios", "app"],
+    pm: ["project manager", "pm", "manager", "lead", "director"],
+    qa: ["qa", "quality", "test", "tester"],
   };
   const words = kw[role];
   return employees.find((e) => {
@@ -121,10 +109,15 @@ function matchEmployeeForRole(
 function calcEffort(
   selections: SelectedFeature[],
   library: FeatureDefinition[],
-  employees: TeamRate[]
+  employees: TeamRate[],
 ): { byRole: EffortSummary[]; totalHours: number; totalCost: number } {
   const roleHours: Record<RoleKey, number> = {
-    designer: 0, frontend: 0, backend: 0, mobile: 0, pm: 0, qa: 0,
+    designer: 0,
+    frontend: 0,
+    backend: 0,
+    mobile: 0,
+    pm: 0,
+    qa: 0,
   };
 
   for (const sel of selections) {
@@ -152,6 +145,7 @@ function calcEffort(
 // ─── Main Component ───────────────────────────────────────────────────────────
 export const ScopeEngine = React.memo(function ScopeEngine({
   companyId,
+  canManage = true,
   projectName: initialProjectName,
   employees,
   currency,
@@ -163,30 +157,35 @@ export const ScopeEngine = React.memo(function ScopeEngine({
   const queryClient = useQueryClient();
   const { data: dbFeatures = [], isLoading: isLoadingFeatures } = useScopeFeatures(companyId);
 
-  // Merge features: DB takes precedence, fallback to default library
+  // Merge features: database records override matching defaults, while the
+  // standard catalog stays available alongside custom company features.
   const library: FeatureDefinition[] = React.useMemo(() => {
-    if (dbFeatures && dbFeatures.length > 0) {
-      return dbFeatures.map((f) => ({
-        id: f.id,
-        category: (f.category as FeatureCategory) || "frontend",
-        label: f.label,
-        description: f.description ?? "",
-        effort: f.effort,
-        icon: f.icon || "⚡",
-        tags: Array.isArray(f.tags) ? f.tags : [],
-        isCustom: f.is_custom,
-      })) as (FeatureDefinition & { isCustom?: boolean })[];
-    }
-    return FEATURE_LIBRARY;
+    const databaseIds = new Set(dbFeatures.map((feature) => feature.id));
+    const databaseFeatures = dbFeatures.map((f) => ({
+      id: f.id,
+      category: (f.category as FeatureCategory) || "frontend",
+      label: f.label,
+      description: f.description ?? "",
+      effort: f.effort,
+      icon: f.icon || "⚡",
+      tags: Array.isArray(f.tags) ? f.tags : [],
+      isCustom: f.is_custom,
+    })) as (FeatureDefinition & { isCustom?: boolean })[];
+    return [
+      ...FEATURE_LIBRARY.filter((feature) => !databaseIds.has(feature.id)),
+      ...databaseFeatures,
+    ];
   }, [dbFeatures]);
 
   const [selections, setSelections] = React.useState<SelectedFeature[]>([]);
   const [activeCategory, setActiveCategory] = React.useState<FeatureCategory | "all">("all");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [expandedCategories, setExpandedCategories] = React.useState<Set<FeatureCategory>>(
-    new Set(["discovery", "design", "frontend", "backend", "mobile"])
+    new Set(["discovery", "design", "frontend", "backend", "mobile"]),
   );
-  const [projectName, setProjectName] = React.useState(initialProjectName || "Scope Engine Estimate");
+  const [projectName, setProjectName] = React.useState(
+    initialProjectName || "Scope Engine Estimate",
+  );
 
   React.useEffect(() => {
     if (initialProjectName && initialProjectName.trim()) {
@@ -219,12 +218,12 @@ export const ScopeEngine = React.memo(function ScopeEngine({
   // ── Derived ────────────────────────────────────────────────────────────────
   const selectedIds = React.useMemo(
     () => new Set(selections.map((s) => s.featureId)),
-    [selections]
+    [selections],
   );
 
   const effort = React.useMemo(
     () => calcEffort(selections, library, employees),
-    [selections, library, employees]
+    [selections, library, employees],
   );
 
   const contingencyAmt = effort.totalCost * (contingencyPct / 100);
@@ -299,7 +298,11 @@ export const ScopeEngine = React.memo(function ScopeEngine({
   };
 
   // ── Feature Action Handlers ────────────────────────────────────────────────
-  function addFeature(featureId: string, complexity: Complexity = "medium", phase: TargetPhase = "auto") {
+  function addFeature(
+    featureId: string,
+    complexity: Complexity = "medium",
+    phase: TargetPhase = "auto",
+  ) {
     setSelections((prev) => {
       const exists = prev.find((s) => s.featureId === featureId);
       if (exists) {
@@ -307,8 +310,12 @@ export const ScopeEngine = React.memo(function ScopeEngine({
         toast.info(`Increased quantity for feature.`);
         return prev.map((s) =>
           s.featureId === featureId
-            ? { ...s, quantity: s.quantity + 1, targetPhase: phase !== "auto" ? phase : s.targetPhase }
-            : s
+            ? {
+                ...s,
+                quantity: s.quantity + 1,
+                targetPhase: phase !== "auto" ? phase : s.targetPhase,
+              }
+            : s,
         );
       }
       toast.success(`Added feature to project scope!`);
@@ -325,13 +332,8 @@ export const ScopeEngine = React.memo(function ScopeEngine({
     });
   }
 
-  function updateSelection(
-    featureId: string,
-    patch: Partial<Omit<SelectedFeature, "featureId">>
-  ) {
-    setSelections((prev) =>
-      prev.map((s) => (s.featureId === featureId ? { ...s, ...patch } : s))
-    );
+  function updateSelection(featureId: string, patch: Partial<Omit<SelectedFeature, "featureId">>) {
+    setSelections((prev) => prev.map((s) => (s.featureId === featureId ? { ...s, ...patch } : s)));
   }
 
   function toggleCategory(cat: FeatureCategory) {
@@ -362,29 +364,29 @@ export const ScopeEngine = React.memo(function ScopeEngine({
       const baseEffort: FeatureEffort = {
         designer: Number(newFeature.designer) || 0,
         frontend: Number(newFeature.frontend) || 0,
-        backend:  Number(newFeature.backend) || 0,
-        mobile:   Number(newFeature.mobile) || 0,
-        pm:       Number(newFeature.pm) || 0,
-        qa:       Number(newFeature.qa) || 0,
+        backend: Number(newFeature.backend) || 0,
+        mobile: Number(newFeature.mobile) || 0,
+        pm: Number(newFeature.pm) || 0,
+        qa: Number(newFeature.qa) || 0,
       };
 
       const fullEffort: Record<Complexity, FeatureEffort> = {
         low: {
           designer: Math.round(baseEffort.designer * 0.5),
           frontend: Math.round(baseEffort.frontend * 0.5),
-          backend:  Math.round(baseEffort.backend * 0.5),
-          mobile:   Math.round(baseEffort.mobile * 0.5),
-          pm:       Math.round(baseEffort.pm * 0.5),
-          qa:       Math.round(baseEffort.qa * 0.5),
+          backend: Math.round(baseEffort.backend * 0.5),
+          mobile: Math.round(baseEffort.mobile * 0.5),
+          pm: Math.round(baseEffort.pm * 0.5),
+          qa: Math.round(baseEffort.qa * 0.5),
         },
         medium: baseEffort,
         high: {
           designer: Math.round(baseEffort.designer * 2),
           frontend: Math.round(baseEffort.frontend * 2),
-          backend:  Math.round(baseEffort.backend * 2),
-          mobile:   Math.round(baseEffort.mobile * 2),
-          pm:       Math.round(baseEffort.pm * 2),
-          qa:       Math.round(baseEffort.qa * 2),
+          backend: Math.round(baseEffort.backend * 2),
+          mobile: Math.round(baseEffort.mobile * 2),
+          pm: Math.round(baseEffort.pm * 2),
+          qa: Math.round(baseEffort.qa * 2),
         },
       };
 
@@ -456,11 +458,11 @@ export const ScopeEngine = React.memo(function ScopeEngine({
 
     const rolePhaseMap: Record<RoleKey, typeof designPhase> = {
       designer: designPhase,
-      pm:       designPhase,
+      pm: designPhase,
       frontend: devPhase,
-      backend:  devPhase,
-      mobile:   devPhase,
-      qa:       qaPhase,
+      backend: devPhase,
+      mobile: devPhase,
+      qa: qaPhase,
     };
 
     for (const e of effort.byRole) {
@@ -476,14 +478,14 @@ export const ScopeEngine = React.memo(function ScopeEngine({
       });
     }
 
-    const phases = [designPhase, devPhase, qaPhase].filter(
-      (p) => p.allocations.length > 0
-    );
+    const phases = [designPhase, devPhase, qaPhase].filter((p) => p.allocations.length > 0);
 
     const featureList = selections
       .map((s) => {
         const f = library.find((x) => x.id === s.featureId);
-        return f ? `${f.icon} ${f.label} (${COMPLEXITY_LABELS[s.complexity].label}${s.quantity > 1 ? ` ×${s.quantity}` : ""})` : "";
+        return f
+          ? `${f.icon} ${f.label} (${COMPLEXITY_LABELS[s.complexity].label}${s.quantity > 1 ? ` ×${s.quantity}` : ""})`
+          : "";
       })
       .filter(Boolean)
       .join("\n");
@@ -511,12 +513,16 @@ export const ScopeEngine = React.memo(function ScopeEngine({
             <div>
               <h2 className="font-display font-bold text-lg flex items-center gap-2">
                 Scope of Work & Effort Engine
-                <Badge variant="outline" className="text-[10px] bg-violet-500/10 text-violet-600 border-violet-200">
+                <Badge
+                  variant="outline"
+                  className="text-[10px] bg-violet-500/10 text-violet-600 border-violet-200"
+                >
                   Database Powered
                 </Badge>
               </h2>
               <p className="text-xs text-muted-foreground">
-                Drag and drop features into phase buckets or click to select. Live team hours and loaded costs adjust dynamically.
+                Drag and drop features into phase buckets or click to select. Live team hours and
+                loaded costs adjust dynamically.
               </p>
             </div>
           </div>
@@ -591,17 +597,21 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                 "rounded-full px-3 py-1 text-xs font-semibold transition-all border",
                 activeCategory === "all"
                   ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                  : "bg-card hover:bg-muted border-border text-muted-foreground"
+                  : "bg-card hover:bg-muted border-border text-muted-foreground",
               )}
             >
               <Filter className="size-3 inline mr-1" />
               All ({library.length})
             </button>
             {allCategories.map((cat) => {
-              const meta = CATEGORY_META[cat] ?? { label: cat, icon: "📁", color: "text-foreground" };
+              const meta = CATEGORY_META[cat] ?? {
+                label: cat,
+                icon: "📁",
+                color: "text-foreground",
+              };
               const count = library.filter((f) => f.category === cat).length;
-              const selected = selections.filter((s) =>
-                library.find((f) => f.id === s.featureId)?.category === cat
+              const selected = selections.filter(
+                (s) => library.find((f) => f.id === s.featureId)?.category === cat,
               ).length;
               return (
                 <button
@@ -611,7 +621,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                     "rounded-full px-3 py-1 text-xs font-semibold transition-all border flex items-center gap-1",
                     activeCategory === cat
                       ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                      : "bg-card hover:bg-muted border-border text-muted-foreground"
+                      : "bg-card hover:bg-muted border-border text-muted-foreground",
                   )}
                 >
                   <span>{meta.icon}</span>
@@ -631,7 +641,10 @@ export const ScopeEngine = React.memo(function ScopeEngine({
           <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
             <div className="flex items-center gap-1.5">
               <GripVertical className="size-3 text-muted-foreground" />
-              <span>Tip: <b>Drag cards</b> across to the drop zones on the right, or simply click to toggle.</span>
+              <span>
+                Tip: <b>Drag cards</b> across to the drop zones on the right, or simply click to
+                toggle.
+              </span>
             </div>
             <span>{library.length} items in DB</span>
           </div>
@@ -639,7 +652,11 @@ export const ScopeEngine = React.memo(function ScopeEngine({
           {/* Feature Groups & Items */}
           <div className="space-y-3">
             {Array.from(grouped.entries()).map(([cat, features]) => {
-              const meta = CATEGORY_META[cat] ?? { label: cat, icon: "📁", color: "text-foreground" };
+              const meta = CATEGORY_META[cat] ?? {
+                label: cat,
+                icon: "📁",
+                color: "text-foreground",
+              };
               const isExpanded = expandedCategories.has(cat);
               const selectedInCat = features.filter((f) => selectedIds.has(f.id)).length;
               return (
@@ -671,7 +688,12 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                         const isSel = selectedIds.has(feat.id);
                         const sel = selections.find((s) => s.featureId === feat.id);
                         const baseEffort = feat.effort[sel?.complexity ?? "medium"] ?? {
-                          designer: 0, frontend: 0, backend: 0, mobile: 0, pm: 0, qa: 0
+                          designer: 0,
+                          frontend: 0,
+                          backend: 0,
+                          mobile: 0,
+                          pm: 0,
+                          qa: 0,
                         };
                         const totalFeatureHours =
                           ROLE_KEYS.reduce((s, rk) => s + (baseEffort[rk] ?? 0), 0) *
@@ -686,8 +708,10 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                             onDragEnd={handleDragEnd}
                             className={cn(
                               "transition-all group",
-                              isSel ? "bg-primary/5 border-l-4 border-primary" : "hover:bg-muted/30",
-                              isDragging && "opacity-40 border-dashed border-2 border-primary"
+                              isSel
+                                ? "bg-primary/5 border-l-4 border-primary"
+                                : "hover:bg-muted/30",
+                              isDragging && "opacity-40 border-dashed border-2 border-primary",
                             )}
                           >
                             {/* Feature row */}
@@ -704,7 +728,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                                   "mt-0.5 size-4 rounded border-2 flex items-center justify-center shrink-0 transition-all cursor-pointer",
                                   isSel
                                     ? "bg-primary border-primary text-primary-foreground"
-                                    : "border-border bg-card"
+                                    : "border-border bg-card",
                                 )}
                               >
                                 {isSel && <Check className="size-3" />}
@@ -716,7 +740,10 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                                     {feat.icon} {feat.label}
                                   </span>
                                   {feat.isCustom && (
-                                    <Badge variant="outline" className="text-[9px] h-4 bg-amber-500/10 text-amber-600 border-amber-300">
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[9px] h-4 bg-amber-500/10 text-amber-600 border-amber-300"
+                                    >
                                       Custom
                                     </Badge>
                                   )}
@@ -734,15 +761,20 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                                 </p>
                                 {isSel && (
                                   <div className="flex items-center gap-1 mt-1 text-xs text-primary font-medium">
-                                    <Clock className="size-3" />
-                                    ~{totalFeatureHours}h estimated effort
+                                    <Clock className="size-3" />~{totalFeatureHours}h estimated
+                                    effort
                                   </div>
                                 )}
                               </div>
 
                               <div className="flex flex-col items-end gap-1 shrink-0">
                                 <div className="text-[10px] text-muted-foreground text-right font-mono">
-                                  ~{ROLE_KEYS.reduce((s, rk) => s + (feat.effort.medium?.[rk] ?? 0), 0)}h
+                                  ~
+                                  {ROLE_KEYS.reduce(
+                                    (s, rk) => s + (feat.effort.medium?.[rk] ?? 0),
+                                    0,
+                                  )}
+                                  h
                                 </div>
                                 {feat.isCustom && (
                                   <button
@@ -764,7 +796,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                               >
                                 {/* Complexity */}
                                 <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-muted-foreground mr-1">Scale:</span>
+                                  <span className="text-[11px] text-muted-foreground mr-1">
+                                    Scale:
+                                  </span>
                                   {(["low", "medium", "high"] as Complexity[]).map((c) => {
                                     const meta = COMPLEXITY_LABELS[c];
                                     return (
@@ -778,9 +812,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                                             ? c === "low"
                                               ? "bg-emerald-500 text-white border-emerald-500 shadow-xs"
                                               : c === "medium"
-                                              ? "bg-amber-500 text-white border-amber-500 shadow-xs"
-                                              : "bg-red-500 text-white border-red-500 shadow-xs"
-                                            : "bg-card border-border text-muted-foreground hover:bg-muted"
+                                                ? "bg-amber-500 text-white border-amber-500 shadow-xs"
+                                                : "bg-red-500 text-white border-red-500 shadow-xs"
+                                            : "bg-card border-border text-muted-foreground hover:bg-muted",
                                         )}
                                       >
                                         {meta.label}
@@ -820,7 +854,8 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                                 {/* Per-role mini hour tags */}
                                 <div className="w-full grid grid-cols-6 gap-1 mt-1">
                                   {ROLE_KEYS.map((rk) => {
-                                    const h = (feat.effort[sel.complexity]?.[rk] ?? 0) * sel.quantity;
+                                    const h =
+                                      (feat.effort[sel.complexity]?.[rk] ?? 0) * sel.quantity;
                                     if (h === 0) return null;
                                     const meta = ROLE_LABELS[rk];
                                     return (
@@ -828,7 +863,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                                         <div
                                           className={cn(
                                             "rounded text-[9px] text-white font-bold px-1 py-0.5",
-                                            meta.color
+                                            meta.color,
                                           )}
                                         >
                                           {h}h
@@ -865,8 +900,8 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               dragOverTarget === "main-scope"
                 ? "border-violet-500 bg-violet-500/15 shadow-lg scale-[1.01]"
                 : draggingFeatureId
-                ? "border-violet-400/80 bg-violet-500/5 animate-pulse"
-                : "border-border/80 bg-muted/20 hover:border-violet-400/50"
+                  ? "border-violet-400/80 bg-violet-500/5 animate-pulse"
+                  : "border-border/80 bg-muted/20 hover:border-violet-400/50",
             )}
           >
             <div className="flex flex-col items-center gap-1.5 py-1">
@@ -875,7 +910,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                   "size-10 rounded-full flex items-center justify-center transition-all",
                   dragOverTarget === "main-scope"
                     ? "bg-violet-600 text-white scale-110"
-                    : "bg-violet-500/10 text-violet-600"
+                    : "bg-violet-500/10 text-violet-600",
                 )}
               >
                 <Layers className="size-5" />
@@ -897,8 +932,8 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               {(
                 [
                   { id: "design", label: "🎨 Design", icon: "🎨" },
-                  { id: "dev",    label: "💻 Dev",    icon: "💻" },
-                  { id: "qa",     label: "🧪 QA",     icon: "🧪" },
+                  { id: "dev", label: "💻 Dev", icon: "💻" },
+                  { id: "qa", label: "🧪 QA", icon: "🧪" },
                 ] as const
               ).map((phase) => (
                 <div
@@ -919,7 +954,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                     "rounded-lg border text-center p-2 transition-all cursor-pointer text-xs font-semibold",
                     dragOverTarget === phase.id
                       ? "border-violet-600 bg-violet-600 text-white shadow-md scale-105"
-                      : "border-border bg-card/60 hover:bg-muted/50 text-foreground"
+                      : "border-border bg-card/60 hover:bg-muted/50 text-foreground",
                   )}
                 >
                   <div className="text-[11px]">{phase.label}</div>
@@ -955,9 +990,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                 const meta = ROLE_LABELS[role];
                 const emp = matchEmployeeForRole(role, employees);
                 const pct =
-                  effort.totalHours > 0
-                    ? Math.round((hours / effort.totalHours) * 100)
-                    : 0;
+                  effort.totalHours > 0 ? Math.round((hours / effort.totalHours) * 100) : 0;
                 return (
                   <div key={role} className="space-y-1">
                     <div className="flex items-center justify-between text-xs">
@@ -965,9 +998,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                         <span className={cn("size-2 rounded-full shrink-0", meta.color)} />
                         <span className="font-medium">{meta.label}</span>
                         {emp && (
-                          <span className="text-muted-foreground text-[10px]">
-                            ({emp.name})
-                          </span>
+                          <span className="text-muted-foreground text-[10px]">({emp.name})</span>
                         )}
                       </div>
                       <div className="text-right">
@@ -981,7 +1012,10 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                     </div>
                     <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                       <div
-                        className={cn("h-full rounded-full transition-all duration-500", meta.color)}
+                        className={cn(
+                          "h-full rounded-full transition-all duration-500",
+                          meta.color,
+                        )}
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -1010,27 +1044,43 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               <CardContent className="space-y-2">
                 {(
                   [
-                    { label: "Labour Cost",        value: effort.totalCost,         muted: false },
-                    { label: `Contingency (${contingencyPct}%)`, value: contingencyAmt, muted: true  },
-                    { label: "Total Delivery Cost", value: totalWithContingency,     muted: false },
-                    { label: `Margin (${marginPct}%)`,           value: price - totalWithContingency, muted: true  },
-                    { label: "Quote to Client",    value: price,                    muted: false },
-                    { label: `Commission (Ayesha ${salesCommissionPct}%)`, value: commission, muted: true },
-                    { label: "Net Company Profit", value: netProfit,                muted: false },
+                    { label: "Labour Cost", value: effort.totalCost, muted: false },
+                    {
+                      label: `Contingency (${contingencyPct}%)`,
+                      value: contingencyAmt,
+                      muted: true,
+                    },
+                    { label: "Total Delivery Cost", value: totalWithContingency, muted: false },
+                    {
+                      label: `Margin (${marginPct}%)`,
+                      value: price - totalWithContingency,
+                      muted: true,
+                    },
+                    { label: "Quote to Client", value: price, muted: false },
+                    {
+                      label: `Commission (Ayesha ${salesCommissionPct}%)`,
+                      value: commission,
+                      muted: true,
+                    },
+                    { label: "Net Company Profit", value: netProfit, muted: false },
                   ] as const
                 ).map(({ label, value, muted }) => (
                   <div
                     key={label}
                     className={cn(
                       "flex items-center justify-between text-xs",
-                      muted && "opacity-70"
+                      muted && "opacity-70",
                     )}
                   >
                     <span className="text-muted-foreground">{label}</span>
                     <span
                       className={cn(
                         "font-mono font-semibold",
-                        value < 0 ? "text-red-500" : !muted ? "text-foreground font-bold" : "text-muted-foreground"
+                        value < 0
+                          ? "text-red-500"
+                          : !muted
+                            ? "text-foreground font-bold"
+                            : "text-muted-foreground",
                       )}
                     >
                       {formatMoney(value, currency)}
@@ -1042,9 +1092,18 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                 <div className="pt-2 border-t mt-1 grid grid-cols-2 gap-2 text-[11px]">
                   {[
                     { label: "/hr", val: effort.totalHours > 0 ? price / effort.totalHours : 0 },
-                    { label: "/day (8h)", val: effort.totalHours > 0 ? (price / effort.totalHours) * 8 : 0 },
-                    { label: "/week (40h)", val: effort.totalHours > 0 ? (price / effort.totalHours) * 40 : 0 },
-                    { label: "/month (160h)", val: effort.totalHours > 0 ? (price / effort.totalHours) * 160 : 0 },
+                    {
+                      label: "/day (8h)",
+                      val: effort.totalHours > 0 ? (price / effort.totalHours) * 8 : 0,
+                    },
+                    {
+                      label: "/week (40h)",
+                      val: effort.totalHours > 0 ? (price / effort.totalHours) * 40 : 0,
+                    },
+                    {
+                      label: "/month (160h)",
+                      val: effort.totalHours > 0 ? (price / effort.totalHours) * 160 : 0,
+                    },
                   ].map(({ label, val }) => (
                     <div key={label} className="rounded-lg bg-muted/40 p-2 text-center">
                       <p className="text-muted-foreground text-[10px]">{label}</p>
@@ -1057,12 +1116,15 @@ export const ScopeEngine = React.memo(function ScopeEngine({
 
                 <div className="pt-2">
                   <div className="rounded-lg bg-primary text-primary-foreground p-3 text-center mb-3 shadow-sm">
-                    <p className="text-[10px] opacity-80 uppercase tracking-wider font-semibold">Total Client Quote</p>
+                    <p className="text-[10px] opacity-80 uppercase tracking-wider font-semibold">
+                      Total Client Quote
+                    </p>
                     <p className="text-2xl font-bold font-display mt-0.5">
                       {formatMoney(price, currency)}
                     </p>
                     <p className="text-xs opacity-75 mt-0.5">
-                      ~{Math.round(effort.totalHours)}h · {Math.round(effort.totalHours / 8)} days · ~{(effort.totalHours / 40).toFixed(1)} wks
+                      ~{Math.round(effort.totalHours)}h · {Math.round(effort.totalHours / 8)} days ·
+                      ~{(effort.totalHours / 40).toFixed(1)} wks
                     </p>
                   </div>
 
@@ -1089,7 +1151,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               <CardHeader className="pb-2">
                 <CardTitle className="font-display text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
                   <span>Selected in Scope ({selections.length})</span>
-                  <span className="font-mono text-foreground font-bold">{Math.round(effort.totalHours)}h</span>
+                  <span className="font-mono text-foreground font-bold">
+                    {Math.round(effort.totalHours)}h
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1.5 max-h-64 overflow-y-auto">
@@ -1115,8 +1179,8 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                             sel.complexity === "low"
                               ? "text-emerald-600 border-emerald-300"
                               : sel.complexity === "medium"
-                              ? "text-amber-600 border-amber-300"
-                              : "text-red-600 border-red-300"
+                                ? "text-amber-600 border-amber-300"
+                                : "text-red-600 border-red-300",
                           )}
                         >
                           {COMPLEXITY_LABELS[sel.complexity].label}
@@ -1124,7 +1188,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                         {sel.quantity > 1 && (
                           <span className="text-muted-foreground font-mono">×{sel.quantity}</span>
                         )}
-                        <span className="font-mono font-bold text-primary">{Math.round(hours)}h</span>
+                        <span className="font-mono font-bold text-primary">
+                          {Math.round(hours)}h
+                        </span>
                         <button
                           type="button"
                           onClick={() => toggleFeature(sel.featureId)}
@@ -1152,14 +1218,17 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               Add Custom Feature to Library
             </DialogTitle>
             <DialogDescription>
-              Create a custom feature with estimated role effort. It will be saved to your MySQL database and available across your team.
+              Create a custom feature with estimated role effort. It will be saved to your MySQL
+              database and available across your team.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSaveCustomFeature} className="space-y-4">
             <div className="grid grid-cols-[60px_1fr] gap-2">
               <div>
-                <Label htmlFor="feat-icon" className="text-xs">Icon</Label>
+                <Label htmlFor="feat-icon" className="text-xs">
+                  Icon
+                </Label>
                 <Input
                   id="feat-icon"
                   value={newFeature.icon}
@@ -1169,7 +1238,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                 />
               </div>
               <div>
-                <Label htmlFor="feat-name" className="text-xs">Feature Name</Label>
+                <Label htmlFor="feat-name" className="text-xs">
+                  Feature Name
+                </Label>
                 <Input
                   id="feat-name"
                   value={newFeature.label}
@@ -1181,11 +1252,15 @@ export const ScopeEngine = React.memo(function ScopeEngine({
             </div>
 
             <div>
-              <Label htmlFor="feat-cat" className="text-xs">Category</Label>
+              <Label htmlFor="feat-cat" className="text-xs">
+                Category
+              </Label>
               <select
                 id="feat-cat"
                 value={newFeature.category}
-                onChange={(e) => setNewFeature({ ...newFeature, category: e.target.value as FeatureCategory })}
+                onChange={(e) =>
+                  setNewFeature({ ...newFeature, category: e.target.value as FeatureCategory })
+                }
                 className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 {allCategories.map((cat) => (
@@ -1197,7 +1272,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
             </div>
 
             <div>
-              <Label htmlFor="feat-desc" className="text-xs">Description</Label>
+              <Label htmlFor="feat-desc" className="text-xs">
+                Description
+              </Label>
               <Textarea
                 id="feat-desc"
                 value={newFeature.description}
@@ -1208,7 +1285,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
             </div>
 
             <div>
-              <Label htmlFor="feat-tags" className="text-xs">Tags (comma-separated)</Label>
+              <Label htmlFor="feat-tags" className="text-xs">
+                Tags (comma-separated)
+              </Label>
               <Input
                 id="feat-tags"
                 value={newFeature.tags}
@@ -1220,7 +1299,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
             <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
               <Label className="text-xs font-semibold flex items-center justify-between">
                 <span>Standard Effort per Role (Hours for Medium tier)</span>
-                <span className="text-[10px] text-muted-foreground">Auto-scales 0.5x Low / 2x High</span>
+                <span className="text-[10px] text-muted-foreground">
+                  Auto-scales 0.5x Low / 2x High
+                </span>
               </Label>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div>
@@ -1229,7 +1310,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                     type="number"
                     min="0"
                     value={newFeature.designer}
-                    onChange={(e) => setNewFeature({ ...newFeature, designer: Number(e.target.value) })}
+                    onChange={(e) =>
+                      setNewFeature({ ...newFeature, designer: Number(e.target.value) })
+                    }
                     className="h-8"
                   />
                 </div>
@@ -1239,7 +1322,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                     type="number"
                     min="0"
                     value={newFeature.frontend}
-                    onChange={(e) => setNewFeature({ ...newFeature, frontend: Number(e.target.value) })}
+                    onChange={(e) =>
+                      setNewFeature({ ...newFeature, frontend: Number(e.target.value) })
+                    }
                     className="h-8"
                   />
                 </div>
@@ -1249,7 +1334,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                     type="number"
                     min="0"
                     value={newFeature.backend}
-                    onChange={(e) => setNewFeature({ ...newFeature, backend: Number(e.target.value) })}
+                    onChange={(e) =>
+                      setNewFeature({ ...newFeature, backend: Number(e.target.value) })
+                    }
                     className="h-8"
                   />
                 </div>
@@ -1259,7 +1346,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                     type="number"
                     min="0"
                     value={newFeature.mobile}
-                    onChange={(e) => setNewFeature({ ...newFeature, mobile: Number(e.target.value) })}
+                    onChange={(e) =>
+                      setNewFeature({ ...newFeature, mobile: Number(e.target.value) })
+                    }
                     className="h-8"
                   />
                 </div>
@@ -1295,7 +1384,11 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={savingFeature} className="bg-violet-600 hover:bg-violet-700 text-white">
+              <Button
+                type="submit"
+                disabled={savingFeature}
+                className="bg-violet-600 hover:bg-violet-700 text-white"
+              >
                 {savingFeature ? "Saving to DB..." : "Save Feature to DB"}
               </Button>
             </DialogFooter>
@@ -1308,6 +1401,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
         open={isLibraryManagerOpen}
         onOpenChange={setIsLibraryManagerOpen}
         companyId={companyId}
+        canManage={canManage}
       />
     </div>
   );

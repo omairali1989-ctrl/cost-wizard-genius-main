@@ -15,11 +15,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { logActivity, useScopeFeatures, type ScopeFeatureRecord } from "@/lib/workspace";
 import {
-  useScopeFeatures,
-  type ScopeFeatureRecord,
-} from "@/lib/workspace";
-import {
+  FEATURE_LIBRARY,
   type FeatureCategory,
   type FeatureEffort,
   type Complexity,
@@ -32,6 +30,7 @@ import {
   Copy,
   Check,
   Plus,
+  Pencil,
   Trash2,
   Search,
   AlertCircle,
@@ -56,6 +55,27 @@ const CATEGORIES: { key: FeatureCategory | "all"; label: string; icon: string }[
   { key: "cms", label: "CMS & Portals", icon: "📰" },
   { key: "social", label: "Social & Marketing", icon: "📣" },
 ];
+
+const createManualForm = () => ({
+  label: "",
+  category: "frontend" as FeatureCategory,
+  description: "",
+  icon: "⚡",
+  tags: "",
+  designer: 4,
+  frontend: 16,
+  backend: 8,
+  mobile: 0,
+  pm: 4,
+  qa: 4,
+});
+
+const STANDARD_FEATURES: ScopeFeatureRecord[] = FEATURE_LIBRARY.map((feature, index) => ({
+  ...feature,
+  company_id: null,
+  sort_order: index,
+  is_custom: false,
+}));
 
 const SAMPLE_TEMPLATE_JSON = `[
   {
@@ -106,15 +126,21 @@ interface FeatureLibraryManagerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   companyId?: string | null | undefined;
+  canManage?: boolean;
 }
 
 export function FeatureLibraryManager({
   open,
   onOpenChange,
   companyId,
+  canManage = true,
 }: FeatureLibraryManagerProps) {
   const queryClient = useQueryClient();
   const { data: dbFeatures = [], isLoading } = useScopeFeatures(companyId ?? undefined);
+  const features = useMemo(() => {
+    const databaseIds = new Set(dbFeatures.map((feature) => feature.id));
+    return [...STANDARD_FEATURES.filter((feature) => !databaseIds.has(feature.id)), ...dbFeatures];
+  }, [dbFeatures]);
 
   const [activeTab, setActiveTab] = useState<"manage" | "import" | "export">("manage");
   const [searchQuery, setSearchQuery] = useState("");
@@ -132,46 +158,36 @@ export function FeatureLibraryManager({
   // Manual Add Form Modal state
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSavingManual, setIsSavingManual] = useState(false);
-  const [manualForm, setManualForm] = useState({
-    label: "",
-    category: "frontend" as FeatureCategory,
-    description: "",
-    icon: "⚡",
-    tags: "",
-    designer: 4,
-    frontend: 16,
-    backend: 8,
-    mobile: 0,
-    pm: 4,
-    qa: 4,
-  });
+  const [editingFeature, setEditingFeature] = useState<ScopeFeatureRecord | null>(null);
+  const [manualForm, setManualForm] = useState(createManualForm);
 
   // Filtered features for Browse tab
   const filteredFeatures = useMemo(() => {
-    return dbFeatures.filter((f) => {
+    return features.filter((f) => {
       const matchCat = selectedCategory === "all" || f.category === selectedCategory;
       const matchCustom =
         filterCustomOnly === "all"
           ? true
           : filterCustomOnly === "custom"
-          ? Boolean(f.is_custom)
-          : !f.is_custom;
+            ? Boolean(f.is_custom)
+            : !f.is_custom;
       const matchSearch =
         !searchQuery.trim() ||
         f.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
         f.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (Array.isArray(f.tags) && f.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
+        (Array.isArray(f.tags) &&
+          f.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
       return matchCat && matchCustom && matchSearch;
     });
-  }, [dbFeatures, selectedCategory, filterCustomOnly, searchQuery]);
+  }, [features, selectedCategory, filterCustomOnly, searchQuery]);
 
   // Statistics
   const stats = useMemo(() => {
-    const total = dbFeatures.length;
-    const custom = dbFeatures.filter((f) => f.is_custom).length;
+    const total = features.length;
+    const custom = features.filter((f) => f.is_custom).length;
     const standard = total - custom;
     return { total, custom, standard };
-  }, [dbFeatures]);
+  }, [features]);
 
   // Copy template JSON
   const handleCopyTemplate = useCallback(() => {
@@ -228,8 +244,17 @@ export function FeatureLibraryManager({
 
       const category = (item.category || "frontend").toLowerCase();
       const validCategories = [
-        "discovery", "design", "frontend", "backend", "mobile",
-        "ecommerce", "integration", "devops", "testing", "cms", "social"
+        "discovery",
+        "design",
+        "frontend",
+        "backend",
+        "mobile",
+        "ecommerce",
+        "integration",
+        "devops",
+        "testing",
+        "cms",
+        "social",
       ];
       const finalCategory = validCategories.includes(category) ? category : "frontend";
 
@@ -298,8 +323,11 @@ export function FeatureLibraryManager({
       const tagsArray = Array.isArray(item.tags)
         ? item.tags.map((t: any) => String(t).trim()).filter(Boolean)
         : typeof item.tags === "string"
-        ? item.tags.split(",").map((t: string) => t.trim()).filter(Boolean)
-        : [];
+          ? item.tags
+              .split(",")
+              .map((t: string) => t.trim())
+              .filter(Boolean)
+          : [];
 
       const record: Partial<ScopeFeatureRecord> = {
         id: item.id || `feat-custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -344,11 +372,19 @@ export function FeatureLibraryManager({
   // Perform bulk import to Supabase
   const handleExecuteImport = async () => {
     if (!parsedItems || parsedItems.length === 0) return;
+    if (!canManage || !companyId) {
+      toast.error("Only cost managers can import features into a company workspace.");
+      return;
+    }
     setIsImporting(true);
     try {
       const { error } = await supabase.from("scope_features").insert(parsedItems);
       if (error) throw error;
 
+      await logActivity(companyId, "created", "scope_feature", null, {
+        count: parsedItems.length,
+        source: "json_import",
+      });
       await queryClient.invalidateQueries({ queryKey: ["scope-features"] });
       toast.success(`🎉 Successfully imported ${parsedItems.length} features into your library!`);
       setJsonText("");
@@ -364,10 +400,19 @@ export function FeatureLibraryManager({
 
   // Delete a feature
   const handleDeleteFeature = async (id: string, label: string) => {
+    if (!canManage || !companyId) {
+      toast.error("Only cost managers can delete company features.");
+      return;
+    }
     if (!confirm(`Are you sure you want to delete "${label}" from your library?`)) return;
     try {
-      const { error } = await supabase.from("scope_features").delete().eq("id", id);
+      const { error } = await supabase
+        .from("scope_features")
+        .delete()
+        .eq("id", id)
+        .eq("company_id", companyId);
       if (error) throw error;
+      await logActivity(companyId, "deleted", "scope_feature", id, { name: label });
       await queryClient.invalidateQueries({ queryKey: ["scope-features"] });
       toast.success(`Deleted feature "${label}"`);
     } catch (err: any) {
@@ -375,9 +420,33 @@ export function FeatureLibraryManager({
     }
   };
 
+  const handleEditFeature = (feature: ScopeFeatureRecord) => {
+    if (!canManage || !feature.is_custom) return;
+    const mediumEffort = feature.effort?.medium ?? createManualForm();
+    setEditingFeature(feature);
+    setManualForm({
+      label: feature.label,
+      category: feature.category as FeatureCategory,
+      description: feature.description ?? "",
+      icon: feature.icon ?? "⚡",
+      tags: (feature.tags ?? []).join(", "),
+      designer: Number(mediumEffort.designer) || 0,
+      frontend: Number(mediumEffort.frontend) || 0,
+      backend: Number(mediumEffort.backend) || 0,
+      mobile: Number(mediumEffort.mobile) || 0,
+      pm: Number(mediumEffort.pm) || 0,
+      qa: Number(mediumEffort.qa) || 0,
+    });
+    setShowAddForm(true);
+  };
+
   // Manual Add Form Submit
   const handleSaveManualFeature = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManage || !companyId) {
+      toast.error("Only cost managers can change the feature library.");
+      return;
+    }
     if (!manualForm.label.trim()) {
       toast.error("Please provide a feature label.");
       return;
@@ -419,8 +488,10 @@ export function FeatureLibraryManager({
         .filter(Boolean);
 
       const record: Partial<ScopeFeatureRecord> = {
-        id: `feat-custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        company_id: companyId ?? null,
+        id:
+          editingFeature?.id ??
+          `feat-custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        company_id: companyId,
         category: manualForm.category,
         label: manualForm.label.trim(),
         description: manualForm.description.trim(),
@@ -431,25 +502,39 @@ export function FeatureLibraryManager({
         is_custom: true,
       };
 
-      const { error } = await supabase.from("scope_features").insert(record);
+      const { error } = editingFeature
+        ? await supabase
+            .from("scope_features")
+            .update({
+              category: record.category,
+              label: record.label,
+              description: record.description,
+              effort: record.effort,
+              icon: record.icon,
+              tags: record.tags,
+              sort_order: record.sort_order,
+            })
+            .eq("id", editingFeature.id)
+            .eq("company_id", companyId)
+        : await supabase.from("scope_features").insert(record);
       if (error) throw error;
 
+      await logActivity(
+        companyId,
+        editingFeature ? "updated" : "created",
+        "scope_feature",
+        record.id,
+        { name: record.label },
+      );
       await queryClient.invalidateQueries({ queryKey: ["scope-features"] });
-      toast.success(`✨ Feature "${manualForm.label}" saved to library!`);
+      toast.success(
+        editingFeature
+          ? `✨ Feature "${manualForm.label}" updated in the library!`
+          : `✨ Feature "${manualForm.label}" saved to library!`,
+      );
       setShowAddForm(false);
-      setManualForm({
-        label: "",
-        category: "frontend",
-        description: "",
-        icon: "⚡",
-        tags: "",
-        designer: 4,
-        frontend: 16,
-        backend: 8,
-        mobile: 0,
-        pm: 4,
-        qa: 4,
-      });
+      setEditingFeature(null);
+      setManualForm(createManualForm());
     } catch (err: any) {
       toast.error(`Failed to save: ${err.message}`);
     } finally {
@@ -459,7 +544,7 @@ export function FeatureLibraryManager({
 
   // Export all features as formatted JSON
   const exportJsonContent = useMemo(() => {
-    const clean = dbFeatures.map((f) => ({
+    const clean = features.map((f) => ({
       category: f.category,
       label: f.label,
       description: f.description,
@@ -468,7 +553,7 @@ export function FeatureLibraryManager({
       effort: f.effort,
     }));
     return JSON.stringify(clean, null, 2);
-  }, [dbFeatures]);
+  }, [features]);
 
   const handleCopyExport = useCallback(() => {
     navigator.clipboard.writeText(exportJsonContent);
@@ -497,13 +582,16 @@ export function FeatureLibraryManager({
             <div>
               <DialogTitle className="font-display font-bold text-xl flex items-center gap-2">
                 <BookOpen className="size-5 text-violet-600" />
-                <span>Feature Library & JSON Hub</span>
-                <Badge variant="outline" className="text-xs bg-violet-500/10 text-violet-600 border-violet-200">
+                <span>Software Scope Blueprint Library</span>
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-violet-500/10 text-violet-600 border-violet-200"
+                >
                   {stats.total} Features
                 </Badge>
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                Maintain your software scope catalog, import bulk feature libraries via JSON, or export your definitions.
+                Add, update or delete custom blueprints, and import or export the library as JSON.
               </DialogDescription>
             </div>
 
@@ -520,7 +608,11 @@ export function FeatureLibraryManager({
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col min-h-0">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as any)}
+          className="flex-1 flex flex-col min-h-0"
+        >
           <div className="px-5 pt-3 border-b bg-muted/20">
             <TabsList className="grid grid-cols-3 max-w-md h-9">
               <TabsTrigger value="manage" className="text-xs font-semibold gap-1.5">
@@ -539,7 +631,10 @@ export function FeatureLibraryManager({
           </div>
 
           {/* ════ TAB 1: BROWSE & MANAGE ════ */}
-          <TabsContent value="manage" className="flex-1 flex flex-col min-h-0 p-5 gap-4 data-[state=inactive]:hidden m-0">
+          <TabsContent
+            value="manage"
+            className="flex-1 flex flex-col min-h-0 p-5 gap-4 data-[state=inactive]:hidden m-0"
+          >
             {/* Search and Filters */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               <div className="relative flex-1">
@@ -565,7 +660,13 @@ export function FeatureLibraryManager({
 
                 <Button
                   size="sm"
-                  onClick={() => setShowAddForm(true)}
+                  onClick={() => {
+                    setEditingFeature(null);
+                    setManualForm(createManualForm());
+                    setShowAddForm(true);
+                  }}
+                  disabled={!canManage || !companyId}
+                  title={!canManage ? "Only cost managers can add features" : undefined}
                   className="h-8 gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold"
                 >
                   <Plus className="size-3.5" /> Add Feature
@@ -598,8 +699,12 @@ export function FeatureLibraryManager({
                 </div>
               ) : filteredFeatures.length === 0 ? (
                 <div className="py-12 text-center space-y-2">
-                  <p className="text-sm font-semibold text-muted-foreground">No features matched your filters</p>
-                  <p className="text-xs text-muted-foreground">Try adjusting your search or category filter.</p>
+                  <p className="text-sm font-semibold text-muted-foreground">
+                    No features matched your filters
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Try adjusting your search or category filter.
+                  </p>
                 </div>
               ) : (
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -627,11 +732,17 @@ export function FeatureLibraryManager({
                               </h4>
                             </div>
                             {f.is_custom ? (
-                              <Badge variant="secondary" className="text-[10px] h-4 bg-violet-500/10 text-violet-600 font-bold">
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] h-4 bg-violet-500/10 text-violet-600 font-bold"
+                              >
                                 Custom
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-[10px] h-4 text-muted-foreground font-mono">
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] h-4 text-muted-foreground font-mono"
+                              >
                                 Standard
                               </Badge>
                             )}
@@ -646,23 +757,58 @@ export function FeatureLibraryManager({
                         {/* Effort Chips */}
                         <div className="flex items-center justify-between pt-2 border-t text-[10px] text-muted-foreground">
                           <div className="flex flex-wrap gap-1">
-                            {mediumEffort.designer ? <span className="bg-muted px-1.5 py-0.5 rounded font-mono">🎨 {mediumEffort.designer}h</span> : null}
-                            {mediumEffort.frontend ? <span className="bg-muted px-1.5 py-0.5 rounded font-mono">💻 {mediumEffort.frontend}h</span> : null}
-                            {mediumEffort.backend ? <span className="bg-muted px-1.5 py-0.5 rounded font-mono">⚙️ {mediumEffort.backend}h</span> : null}
-                            {mediumEffort.mobile ? <span className="bg-muted px-1.5 py-0.5 rounded font-mono">📱 {mediumEffort.mobile}h</span> : null}
-                            {mediumEffort.qa ? <span className="bg-muted px-1.5 py-0.5 rounded font-mono">🧪 {mediumEffort.qa}h</span> : null}
+                            {mediumEffort.designer ? (
+                              <span className="bg-muted px-1.5 py-0.5 rounded font-mono">
+                                🎨 {mediumEffort.designer}h
+                              </span>
+                            ) : null}
+                            {mediumEffort.frontend ? (
+                              <span className="bg-muted px-1.5 py-0.5 rounded font-mono">
+                                💻 {mediumEffort.frontend}h
+                              </span>
+                            ) : null}
+                            {mediumEffort.backend ? (
+                              <span className="bg-muted px-1.5 py-0.5 rounded font-mono">
+                                ⚙️ {mediumEffort.backend}h
+                              </span>
+                            ) : null}
+                            {mediumEffort.mobile ? (
+                              <span className="bg-muted px-1.5 py-0.5 rounded font-mono">
+                                📱 {mediumEffort.mobile}h
+                              </span>
+                            ) : null}
+                            {mediumEffort.qa ? (
+                              <span className="bg-muted px-1.5 py-0.5 rounded font-mono">
+                                🧪 {mediumEffort.qa}h
+                              </span>
+                            ) : null}
                           </div>
 
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="font-bold text-foreground font-mono">{totalHours}h avg</span>
+                            <span className="font-bold text-foreground font-mono">
+                              {totalHours}h avg
+                            </span>
                             {f.is_custom && (
-                              <button
-                                onClick={() => handleDeleteFeature(f.id, f.label)}
-                                className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                                title="Delete custom feature"
-                              >
-                                <Trash2 className="size-3" />
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => handleEditFeature(f)}
+                                  disabled={!canManage || !companyId}
+                                  className="p-1 text-violet-600 hover:bg-violet-500/10 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                                  title="Edit custom feature"
+                                >
+                                  <Pencil className="size-3" />
+                                  <span className="sr-only">Edit {f.label}</span>
+                                </button>
+                                <button
+                                  onClick={() => void handleDeleteFeature(f.id, f.label)}
+                                  disabled={!canManage || !companyId}
+                                  className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                                  title="Delete custom feature"
+                                >
+                                  <Trash2 className="size-3" />
+                                  <span className="sr-only">Delete {f.label}</span>
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -675,13 +821,18 @@ export function FeatureLibraryManager({
           </TabsContent>
 
           {/* ════ TAB 2: IMPORT JSON ════ */}
-          <TabsContent value="import" className="flex-1 flex flex-col min-h-0 p-5 gap-4 data-[state=inactive]:hidden m-0">
+          <TabsContent
+            value="import"
+            className="flex-1 flex flex-col min-h-0 p-5 gap-4 data-[state=inactive]:hidden m-0"
+          >
             {/* Format Instructions & Actions */}
             <div className="rounded-xl border bg-muted/40 p-3.5 space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <FileCode2 className="size-4 text-violet-600" />
-                  <span className="text-xs font-bold text-foreground">JSON Schema & Format Specification</span>
+                  <span className="text-xs font-bold text-foreground">
+                    JSON Schema & Format Specification
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -690,7 +841,11 @@ export function FeatureLibraryManager({
                     onClick={handleCopyTemplate}
                     className="h-7 text-xs gap-1"
                   >
-                    {copiedTemplate ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                    {copiedTemplate ? (
+                      <Check className="size-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="size-3" />
+                    )}
                     <span>{copiedTemplate ? "Copied!" : "Copy Template JSON"}</span>
                   </Button>
                   <Button
@@ -706,7 +861,11 @@ export function FeatureLibraryManager({
               </div>
 
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                Provide an array of feature objects. You can provide simple shorthand effort (e.g. <code>effort: &#123; designer: 4, frontend: 16, backend: 8 &#125;</code>) or full 3-tier complexity (<code>low</code>, <code>medium</code>, <code>high</code>). The app will automatically compute all complexity tiers and sync them to your MySQL database.
+                Provide an array of feature objects. You can provide simple shorthand effort (e.g.{" "}
+                <code>effort: &#123; designer: 4, frontend: 16, backend: 8 &#125;</code>) or full
+                3-tier complexity (<code>low</code>, <code>medium</code>, <code>high</code>). The
+                app will automatically compute all complexity tiers and sync them to your MySQL
+                database.
               </p>
             </div>
 
@@ -781,26 +940,42 @@ export function FeatureLibraryManager({
 
                 <Button
                   size="sm"
-                  disabled={!parsedItems || parsedItems.length === 0 || isImporting}
+                  disabled={
+                    !canManage ||
+                    !companyId ||
+                    !parsedItems ||
+                    parsedItems.length === 0 ||
+                    isImporting
+                  }
                   onClick={handleExecuteImport}
+                  title={!canManage ? "Only cost managers can import features" : undefined}
                   className="gap-1.5 bg-violet-600 hover:bg-violet-700 text-white font-semibold"
                 >
                   <Upload className="size-3.5" />
-                  <span>{isImporting ? "Importing..." : `Import ${parsedItems?.length ?? 0} Features to Database`}</span>
+                  <span>
+                    {isImporting
+                      ? "Importing..."
+                      : `Import ${parsedItems?.length ?? 0} Features to Database`}
+                  </span>
                 </Button>
               </div>
             </div>
           </TabsContent>
 
           {/* ════ TAB 3: EXPORT JSON ════ */}
-          <TabsContent value="export" className="flex-1 flex flex-col min-h-0 p-5 gap-4 data-[state=inactive]:hidden m-0">
+          <TabsContent
+            value="export"
+            className="flex-1 flex flex-col min-h-0 p-5 gap-4 data-[state=inactive]:hidden m-0"
+          >
             <div className="rounded-xl border bg-muted/40 p-3.5 space-y-2">
               <div className="flex items-center gap-2">
                 <Download className="size-4 text-violet-600" />
                 <span className="text-xs font-bold text-foreground">Export Library as JSON</span>
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                Download or copy your complete feature catalog as a structured JSON file. You can use this for backups, versioning, or sharing feature libraries with other team workspaces.
+                Download or copy your complete feature catalog as a structured JSON file. You can
+                use this for backups, versioning, or sharing feature libraries with other team
+                workspaces.
               </p>
             </div>
 
@@ -814,7 +989,11 @@ export function FeatureLibraryManager({
                     onClick={handleCopyExport}
                     className="h-7 text-xs gap-1"
                   >
-                    {copiedExport ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                    {copiedExport ? (
+                      <Check className="size-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="size-3" />
+                    )}
                     <span>{copiedExport ? "Copied!" : "Copy to Clipboard"}</span>
                   </Button>
                   <Button
@@ -843,11 +1022,18 @@ export function FeatureLibraryManager({
             <div className="bg-card border rounded-xl shadow-xl max-w-lg w-full p-5 space-y-4 animate-in zoom-in-95">
               <div className="flex items-center justify-between pb-2 border-b">
                 <h3 className="font-display font-bold text-base flex items-center gap-2">
-                  <Plus className="size-4 text-violet-600" />
-                  <span>Add Feature to Library</span>
+                  {editingFeature ? (
+                    <Pencil className="size-4 text-violet-600" />
+                  ) : (
+                    <Plus className="size-4 text-violet-600" />
+                  )}
+                  <span>{editingFeature ? "Edit Custom Feature" : "Add Feature to Library"}</span>
                 </h3>
                 <button
-                  onClick={() => setShowAddForm(false)}
+                  onClick={() => {
+                    setShowAddForm(false);
+                    setEditingFeature(null);
+                  }}
                   className="text-muted-foreground hover:text-foreground text-xs"
                 >
                   ✕
@@ -882,7 +1068,9 @@ export function FeatureLibraryManager({
                     <label className="text-xs font-medium">Category</label>
                     <select
                       value={manualForm.category}
-                      onChange={(e) => setManualForm({ ...manualForm, category: e.target.value as any })}
+                      onChange={(e) =>
+                        setManualForm({ ...manualForm, category: e.target.value as any })
+                      }
                       className="w-full h-8 rounded-md border border-input bg-background px-2.5 text-xs"
                     >
                       {CATEGORIES.filter((c) => c.key !== "all").map((c) => (
@@ -914,14 +1102,18 @@ export function FeatureLibraryManager({
                 </div>
 
                 <div className="space-y-1.5 pt-1">
-                  <span className="text-xs font-bold text-foreground">Standard Effort Hours (Medium Tier)</span>
+                  <span className="text-xs font-bold text-foreground">
+                    Standard Effort Hours (Medium Tier)
+                  </span>
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div>
                       <span className="text-muted-foreground text-[10px]">🎨 Designer (h)</span>
                       <Input
                         type="number"
                         value={manualForm.designer}
-                        onChange={(e) => setManualForm({ ...manualForm, designer: Number(e.target.value) })}
+                        onChange={(e) =>
+                          setManualForm({ ...manualForm, designer: Number(e.target.value) })
+                        }
                         className="h-7 text-xs"
                       />
                     </div>
@@ -930,7 +1122,9 @@ export function FeatureLibraryManager({
                       <Input
                         type="number"
                         value={manualForm.frontend}
-                        onChange={(e) => setManualForm({ ...manualForm, frontend: Number(e.target.value) })}
+                        onChange={(e) =>
+                          setManualForm({ ...manualForm, frontend: Number(e.target.value) })
+                        }
                         className="h-7 text-xs"
                       />
                     </div>
@@ -939,7 +1133,9 @@ export function FeatureLibraryManager({
                       <Input
                         type="number"
                         value={manualForm.backend}
-                        onChange={(e) => setManualForm({ ...manualForm, backend: Number(e.target.value) })}
+                        onChange={(e) =>
+                          setManualForm({ ...manualForm, backend: Number(e.target.value) })
+                        }
                         className="h-7 text-xs"
                       />
                     </div>
@@ -948,7 +1144,9 @@ export function FeatureLibraryManager({
                       <Input
                         type="number"
                         value={manualForm.mobile}
-                        onChange={(e) => setManualForm({ ...manualForm, mobile: Number(e.target.value) })}
+                        onChange={(e) =>
+                          setManualForm({ ...manualForm, mobile: Number(e.target.value) })
+                        }
                         className="h-7 text-xs"
                       />
                     </div>
@@ -957,7 +1155,9 @@ export function FeatureLibraryManager({
                       <Input
                         type="number"
                         value={manualForm.pm}
-                        onChange={(e) => setManualForm({ ...manualForm, pm: Number(e.target.value) })}
+                        onChange={(e) =>
+                          setManualForm({ ...manualForm, pm: Number(e.target.value) })
+                        }
                         className="h-7 text-xs"
                       />
                     </div>
@@ -966,7 +1166,9 @@ export function FeatureLibraryManager({
                       <Input
                         type="number"
                         value={manualForm.qa}
-                        onChange={(e) => setManualForm({ ...manualForm, qa: Number(e.target.value) })}
+                        onChange={(e) =>
+                          setManualForm({ ...manualForm, qa: Number(e.target.value) })
+                        }
                         className="h-7 text-xs"
                       />
                     </div>
@@ -978,7 +1180,10 @@ export function FeatureLibraryManager({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => setShowAddForm(false)}
+                    onClick={() => {
+                      setShowAddForm(false);
+                      setEditingFeature(null);
+                    }}
                   >
                     Cancel
                   </Button>
@@ -988,7 +1193,13 @@ export function FeatureLibraryManager({
                     disabled={isSavingManual}
                     className="bg-violet-600 hover:bg-violet-700 text-white font-semibold"
                   >
-                    {isSavingManual ? "Saving..." : "Save Feature to Library"}
+                    {isSavingManual
+                      ? editingFeature
+                        ? "Updating..."
+                        : "Saving..."
+                      : editingFeature
+                        ? "Update Feature"
+                        : "Save Feature to Library"}
                   </Button>
                 </div>
               </form>

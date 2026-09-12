@@ -497,6 +497,7 @@ function SettingsInner({ workspace }: { workspace: WorkspaceData }) {
             open={isLibraryManagerOpen}
             onOpenChange={setIsLibraryManagerOpen}
             companyId={companyId}
+            canManage={workspace.canManageCosts}
           />
         </TabsContent>
       </Tabs>
