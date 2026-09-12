@@ -1,0 +1,15 @@
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.update_updated_at_column() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.protect_last_admin() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.has_role(uuid, public.app_role) FROM public, anon;
+REVOKE ALL ON FUNCTION public.can_edit() FROM public, anon;
+REVOKE ALL ON FUNCTION public.current_company_id() FROM public, anon;
+REVOKE ALL ON FUNCTION public.company_employee_rates() FROM public, anon;
+REVOKE ALL ON FUNCTION public.company_members() FROM public, anon;
+REVOKE ALL ON FUNCTION public.create_company(text, text, text) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.has_role(uuid, public.app_role) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_edit() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.current_company_id() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.company_employee_rates() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.company_members() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_company(text, text, text) TO authenticated;

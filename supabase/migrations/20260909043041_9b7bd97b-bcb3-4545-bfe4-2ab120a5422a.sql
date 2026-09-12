@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.invitation_preview(uuid) FROM anon;
