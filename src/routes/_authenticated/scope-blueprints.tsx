@@ -4,6 +4,7 @@ import { BookOpen, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { WorkspaceGate } from "@/components/WorkspaceGate";
 import { PageHeader } from "@/components/AppShell";
 import { FeatureLibraryManager } from "@/components/scope-engine/FeatureLibraryManager";
+import { ProjectBlueprintManager } from "@/components/calculator/ProjectBlueprintManager";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { WorkspaceData } from "@/lib/workspace";
@@ -29,7 +30,7 @@ export const Route = createFileRoute("/_authenticated/scope-blueprints")({
 });
 
 function ScopeBlueprints({ workspace }: { workspace: WorkspaceData }) {
-  const [managerOpen, setManagerOpen] = useState(true);
+  const [managerOpen, setManagerOpen] = useState(false);
   const canManage = workspace.canManageCosts;
 
   return (
@@ -38,11 +39,8 @@ function ScopeBlueprints({ workspace }: { workspace: WorkspaceData }) {
         title="Software Scope Blueprint"
         description="Maintain the reusable feature definitions your team uses to scope and price software work."
         action={
-          <Button
-            onClick={() => setManagerOpen(true)}
-            className="gap-2 bg-violet-600 text-white hover:bg-violet-700"
-          >
-            <BookOpen className="size-4" /> Open blueprint library
+          <Button onClick={() => setManagerOpen(true)} variant="outline" className="gap-2">
+            <BookOpen className="size-4" /> Feature definitions
           </Button>
         }
       />
@@ -100,6 +98,8 @@ function ScopeBlueprints({ workspace }: { workspace: WorkspaceData }) {
           </CardContent>
         </Card>
       </div>
+
+      <ProjectBlueprintManager companyId={workspace.company!.id} canManage={canManage} />
 
       <FeatureLibraryManager
         open={managerOpen}

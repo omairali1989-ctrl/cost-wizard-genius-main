@@ -75,10 +75,12 @@ function mergePresets(customPresets: PresetConfig[]): PresetConfig[] {
 
 export function usePresetLibrary(companyId?: string) {
   const [presets, setPresets] = React.useState<PresetConfig[]>(PRESETS);
+  const [customPresetIds, setCustomPresetIds] = React.useState<Set<string>>(new Set());
 
   const loadPresets = React.useCallback(async () => {
     if (!companyId) {
       setPresets(PRESETS);
+      setCustomPresetIds(new Set());
       return;
     }
     const { data, error } = await supabase
@@ -89,8 +91,10 @@ export function usePresetLibrary(companyId?: string) {
     if (error) {
       console.warn("Failed to load project presets:", error.message);
       setPresets(PRESETS);
+      setCustomPresetIds(new Set());
       return;
     }
+    setCustomPresetIds(new Set(((data ?? []) as unknown as PresetRow[]).map((row) => row.id)));
     const custom = ((data ?? []) as unknown as PresetRow[]).map((row, index) =>
       normalizePreset({ ...(row.config as object), id: row.id }, index),
     );
@@ -138,13 +142,34 @@ export function usePresetLibrary(companyId?: string) {
     window.dispatchEvent(new Event(PRESET_EVENT));
   };
 
+  const savePreset = async (preset: PresetConfig, mode: "create" | "update" = "create") => {
+    if (!companyId) throw new Error("A company workspace is required to manage presets.");
+    const payload = { config: serializePreset(preset) } as never;
+    const { error } =
+      mode === "update"
+        ? await supabase
+            .from("project_presets")
+            .update(payload)
+            .eq("company_id", companyId)
+            .eq("id", preset.id)
+        : await supabase.from("project_presets").insert({
+            id: preset.id,
+            company_id: companyId,
+            config: serializePreset(preset),
+          } as never);
+    if (error) throw error;
+    await loadPresets();
+    window.dispatchEvent(new Event(PRESET_EVENT));
+  };
+
   const resetPresets = async () => {
     if (!companyId) return;
     const { error } = await supabase.from("project_presets").delete().eq("company_id", companyId);
     if (error) throw error;
     setPresets(PRESETS);
+    setCustomPresetIds(new Set());
     window.dispatchEvent(new Event(PRESET_EVENT));
   };
 
-  return { presets, importPresets, deletePreset, resetPresets };
+  return { presets, customPresetIds, importPresets, savePreset, deletePreset, resetPresets };
 }

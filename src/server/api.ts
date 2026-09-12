@@ -15,9 +15,19 @@ const ALLOWED_TABLES = new Set([
   "audit_log",
   "invitations",
   "scope_features",
+  "project_presets",
 ]);
 
-const JSON_COLUMNS = new Set(["skills", "inputs", "results", "details", "raw_user_meta_data", "effort", "tags"]);
+const JSON_COLUMNS = new Set([
+  "skills",
+  "inputs",
+  "results",
+  "details",
+  "raw_user_meta_data",
+  "effort",
+  "tags",
+  "config",
+]);
 const EDIT_ROLES = new Set(["admin", "manager", "management", "project_manager", "technical_lead", "calculator_user"]);
 const COST_ROLES = new Set(["admin", "finance"]);
 const FINANCE_ROLES = new Set(["admin", "finance", "management"]);

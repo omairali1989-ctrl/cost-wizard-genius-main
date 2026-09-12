@@ -227,6 +227,18 @@ async function main() {
     );
   `);
 
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS project_presets (
+      id VARCHAR(128) NOT NULL,
+      company_id VARCHAR(36) NOT NULL,
+      config JSON NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (company_id, id),
+      INDEX idx_project_presets_updated (company_id, updated_at)
+    );
+  `);
+
   console.log("All tables created or verified.");
 
   // Seed scope_features
