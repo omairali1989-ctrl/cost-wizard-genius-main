@@ -1,1 +1,13 @@
 project_id = "qhlqptgvizefbecsotvf"
+
+[auth.email.template.confirmation]
+subject = "Verify your CostCraft work email"
+content_path = "./supabase/email-templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Reset your CostCraft password"
+content_path = "./supabase/email-templates/recovery.html"
+
+[auth.email.template.invite]
+subject = "You are invited to CostCraft"
+content_path = "./supabase/email-templates/invite.html"

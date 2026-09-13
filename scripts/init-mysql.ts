@@ -23,7 +23,9 @@ async function main() {
 
   // 1. Connect without database to ensure DB exists
   const initialConnection = await mysql.createConnection({ host, port, user, password });
-  await initialConnection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+  await initialConnection.query(
+    `CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`,
+  );
   await initialConnection.end();
 
   console.log(`Database "${dbName}" verified.`);
@@ -173,7 +175,8 @@ async function main() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX idx_calcs_company (company_id),
-      INDEX idx_calcs_project (project_id)
+      INDEX idx_calcs_project (project_id),
+      UNIQUE KEY uk_calcs_project_version (project_id, version)
     );
   `);
 
@@ -265,7 +268,7 @@ async function main() {
         feat.icon,
         JSON.stringify(feat.tags),
         i,
-      ]
+      ],
     );
   }
   console.log("Scope features seeded successfully.");
@@ -279,13 +282,15 @@ async function main() {
   // Check if company already exists
   const [existingCompanies] = await connection.query<any[]>(
     "SELECT id FROM companies WHERE name = ?",
-    [companyName]
+    [companyName],
   );
 
   let targetCompanyId = companyId;
   if (existingCompanies.length > 0) {
     targetCompanyId = existingCompanies[0].id;
-    console.log(`Company "${companyName}" already exists (ID: ${targetCompanyId}). Updating details...`);
+    console.log(
+      `Company "${companyName}" already exists (ID: ${targetCompanyId}). Updating details...`,
+    );
     await connection.query("UPDATE companies SET currency = ?, industry = ? WHERE id = ?", [
       currency,
       industry,
@@ -295,14 +300,14 @@ async function main() {
     console.log(`Creating company "${companyName}" (ID: ${targetCompanyId})...`);
     await connection.query(
       "INSERT INTO companies (id, name, industry, currency) VALUES (?, ?, ?, ?)",
-      [targetCompanyId, companyName, industry, currency]
+      [targetCompanyId, companyName, industry, currency],
     );
   }
 
   // 5. Seed Cost Policy for Alisons Technology
   const [existingPolicies] = await connection.query<any[]>(
     "SELECT id FROM cost_policies WHERE company_id = ?",
-    [targetCompanyId]
+    [targetCompanyId],
   );
   if (existingPolicies.length === 0) {
     console.log("Creating default cost policy for Alisons Technology...");
@@ -310,7 +315,7 @@ async function main() {
       `INSERT INTO cost_policies 
        (id, company_id, working_days_per_year, hours_per_day, default_utilization_pct, default_contingency_pct, default_margin_pct, pricing_mode, default_markup_pct, rounding_step)
        VALUES (?, ?, 240, 8, 75, 10, 25, 'margin', 35, 100)`,
-      [crypto.randomUUID(), targetCompanyId]
+      [crypto.randomUUID(), targetCompanyId],
     );
   }
 
@@ -319,18 +324,20 @@ async function main() {
 
   const [existingUsers] = await connection.query<any[]>(
     "SELECT id FROM auth_users WHERE email = ?",
-    [adminEmail]
+    [adminEmail],
   );
 
   let adminUserId = crypto.randomUUID();
   if (existingUsers.length > 0) {
     adminUserId = existingUsers[0].id;
-    throw new Error(`Admin user "${adminEmail}" already exists. Refusing to reset an existing account.`);
+    throw new Error(
+      `Admin user "${adminEmail}" already exists. Refusing to reset an existing account.`,
+    );
   } else {
     console.log(`Creating admin user "${adminEmail}"...`);
     await connection.query(
       "INSERT INTO auth_users (id, email, password_hash, raw_user_meta_data) VALUES (?, ?, ?, ?)",
-      [adminUserId, adminEmail, passwordHash, JSON.stringify({ full_name: adminFullName })]
+      [adminUserId, adminEmail, passwordHash, JSON.stringify({ full_name: adminFullName })],
     );
   }
 
@@ -338,14 +345,14 @@ async function main() {
   await connection.query(
     `INSERT INTO profiles (id, company_id, full_name, email) VALUES (?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE company_id = VALUES(company_id), full_name = VALUES(full_name), email = VALUES(email)`,
-    [adminUserId, targetCompanyId, adminFullName, adminEmail]
+    [adminUserId, targetCompanyId, adminFullName, adminEmail],
   );
 
   // User Role (admin)
   await connection.query(
     `INSERT INTO user_roles (id, user_id, company_id, role) VALUES (?, ?, ?, 'admin')
      ON DUPLICATE KEY UPDATE role = 'admin'`,
-    [crypto.randomUUID(), adminUserId, targetCompanyId]
+    [crypto.randomUUID(), adminUserId, targetCompanyId],
   );
 
   // 7. Employee and overhead records are intentionally not seeded here.
@@ -358,22 +365,26 @@ async function main() {
   for (const exp of officeExpenses) {
     const [existing] = await connection.query<any[]>(
       "SELECT id FROM overheads WHERE company_id = ? AND name = ?",
-      [targetCompanyId, exp.name]
+      [targetCompanyId, exp.name],
     );
 
     if (existing.length > 0) {
       await connection.query(
         "UPDATE overheads SET category = ?, monthly_amount = ?, allocation_basis = 'per_employee' WHERE id = ?",
-        [exp.category, exp.monthly_amount, existing[0].id]
+        [exp.category, exp.monthly_amount, existing[0].id],
       );
-      console.log(`  Updated overhead: ${exp.name} (Monthly: Rs. ${exp.monthly_amount.toLocaleString()})`);
+      console.log(
+        `  Updated overhead: ${exp.name} (Monthly: Rs. ${exp.monthly_amount.toLocaleString()})`,
+      );
     } else {
       await connection.query(
         `INSERT INTO overheads (id, company_id, name, category, monthly_amount, allocation_basis)
          VALUES (?, ?, ?, ?, ?, 'per_employee')`,
-        [crypto.randomUUID(), targetCompanyId, exp.name, exp.category, exp.monthly_amount]
+        [crypto.randomUUID(), targetCompanyId, exp.name, exp.category, exp.monthly_amount],
       );
-      console.log(`  Inserted overhead: ${exp.name} (Monthly: Rs. ${exp.monthly_amount.toLocaleString()})`);
+      console.log(
+        `  Inserted overhead: ${exp.name} (Monthly: Rs. ${exp.monthly_amount.toLocaleString()})`,
+      );
     }
   }
 
@@ -384,7 +395,9 @@ async function main() {
   console.log(`Currency: PKR (₨)`);
   console.log("Employees seeded: 0 (enter personnel data through the authorized app)");
   console.log(`Office Overheads Seeded: ${officeExpenses.length}`);
-  console.log(`Monthly Total Overhead: Rs. ${officeExpenses.reduce((s, o) => s + o.monthly_amount, 0).toLocaleString()}`);
+  console.log(
+    `Monthly Total Overhead: Rs. ${officeExpenses.reduce((s, o) => s + o.monthly_amount, 0).toLocaleString()}`,
+  );
   console.log("========================================================\n");
 
   await connection.end();

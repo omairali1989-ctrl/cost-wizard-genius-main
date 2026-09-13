@@ -1,11 +1,5 @@
 import React, { useState, useMemo } from "react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,11 +21,7 @@ import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 import { formatMoney } from "@/lib/pricing";
 import type { TeamRate } from "@/lib/workspace";
-import type {
-  PresetConfig,
-  StackCategory,
-  LinkedStackItem,
-} from "./qce/types";
+import type { PresetConfig, StackCategory, LinkedStackItem } from "./qce/types";
 import {
   Code2,
   Server,
@@ -65,53 +55,198 @@ export const POPULAR_TECH_TEMPLATES: Array<{
   defaultPct: number;
 }> = [
   // Frontend
-  { tech: "React & Next.js", category: "frontend", roleLabel: "Frontend Web Developer", defaultPct: 80 },
+  {
+    tech: "React & Next.js",
+    category: "frontend",
+    roleLabel: "Frontend Web Developer",
+    defaultPct: 80,
+  },
   { tech: "Vue.js & Nuxt", category: "frontend", roleLabel: "Frontend Engineer", defaultPct: 70 },
   { tech: "Angular Web App", category: "frontend", roleLabel: "Angular Developer", defaultPct: 70 },
-  { tech: "Tailwind CSS & UI Components", category: "frontend", roleLabel: "UI Styling Specialist", defaultPct: 50 },
-  { tech: "TypeScript & Tooling", category: "frontend", roleLabel: "Frontend Architecture", defaultPct: 50 },
+  {
+    tech: "Tailwind CSS & UI Components",
+    category: "frontend",
+    roleLabel: "UI Styling Specialist",
+    defaultPct: 50,
+  },
+  {
+    tech: "TypeScript & Tooling",
+    category: "frontend",
+    roleLabel: "Frontend Architecture",
+    defaultPct: 50,
+  },
 
   // Backend
-  { tech: "Node.js & Express REST API", category: "backend", roleLabel: "REST API Backend Dev", defaultPct: 80 },
-  { tech: "PHP & Laravel 11 Framework", category: "backend", roleLabel: "Laravel Backend Developer", defaultPct: 80 },
-  { tech: "Python & FastAPI Microservices", category: "backend", roleLabel: "Python Backend Developer", defaultPct: 70 },
-  { tech: "Go / Golang Services", category: "backend", roleLabel: "High-Performance Backend Dev", defaultPct: 70 },
-  { tech: "GraphQL API & Apollo", category: "backend", roleLabel: "GraphQL API Engineer", defaultPct: 60 },
+  {
+    tech: "Node.js & Express REST API",
+    category: "backend",
+    roleLabel: "REST API Backend Dev",
+    defaultPct: 80,
+  },
+  {
+    tech: "PHP & Laravel 11 Framework",
+    category: "backend",
+    roleLabel: "Laravel Backend Developer",
+    defaultPct: 80,
+  },
+  {
+    tech: "Python & FastAPI Microservices",
+    category: "backend",
+    roleLabel: "Python Backend Developer",
+    defaultPct: 70,
+  },
+  {
+    tech: "Go / Golang Services",
+    category: "backend",
+    roleLabel: "High-Performance Backend Dev",
+    defaultPct: 70,
+  },
+  {
+    tech: "GraphQL API & Apollo",
+    category: "backend",
+    roleLabel: "GraphQL API Engineer",
+    defaultPct: 60,
+  },
 
   // Mobile
-  { tech: "Flutter Cross-Platform App", category: "mobile", roleLabel: "Cross-Platform Mobile Dev", defaultPct: 100 },
-  { tech: "React Native Mobile App", category: "mobile", roleLabel: "React Native Mobile Dev", defaultPct: 100 },
-  { tech: "iOS Native (Swift/SwiftUI)", category: "mobile", roleLabel: "iOS Native Developer", defaultPct: 80 },
-  { tech: "Android Native (Kotlin)", category: "mobile", roleLabel: "Android Native Developer", defaultPct: 80 },
+  {
+    tech: "Flutter Cross-Platform App",
+    category: "mobile",
+    roleLabel: "Cross-Platform Mobile Dev",
+    defaultPct: 100,
+  },
+  {
+    tech: "React Native Mobile App",
+    category: "mobile",
+    roleLabel: "React Native Mobile Dev",
+    defaultPct: 100,
+  },
+  {
+    tech: "iOS Native (Swift/SwiftUI)",
+    category: "mobile",
+    roleLabel: "iOS Native Developer",
+    defaultPct: 80,
+  },
+  {
+    tech: "Android Native (Kotlin)",
+    category: "mobile",
+    roleLabel: "Android Native Developer",
+    defaultPct: 80,
+  },
 
   // Database
-  { tech: "PostgreSQL Relational DB", category: "database", roleLabel: "Database Schema Architect", defaultPct: 40 },
-  { tech: "MongoDB NoSQL Cloud", category: "database", roleLabel: "Document Database Specialist", defaultPct: 40 },
-  { tech: "MySQL Relational Database", category: "database", roleLabel: "MySQL Schema & Optimization", defaultPct: 40 },
-  { tech: "Redis In-Memory Cache", category: "database", roleLabel: "Caching & PubSub Engineer", defaultPct: 30 },
+  {
+    tech: "PostgreSQL Relational DB",
+    category: "database",
+    roleLabel: "Database Schema Architect",
+    defaultPct: 40,
+  },
+  {
+    tech: "MongoDB NoSQL Cloud",
+    category: "database",
+    roleLabel: "Document Database Specialist",
+    defaultPct: 40,
+  },
+  {
+    tech: "MySQL Relational Database",
+    category: "database",
+    roleLabel: "MySQL Schema & Optimization",
+    defaultPct: 40,
+  },
+  {
+    tech: "Redis In-Memory Cache",
+    category: "database",
+    roleLabel: "Caching & PubSub Engineer",
+    defaultPct: 30,
+  },
 
   // Design
-  { tech: "Figma UI/UX & Design System", category: "design", roleLabel: "Lead UI/UX Designer", defaultPct: 50 },
-  { tech: "User Research & Wireframing", category: "design", roleLabel: "UX Researcher & Wireframer", defaultPct: 40 },
-  { tech: "Interactive Motion & Prototyping", category: "design", roleLabel: "Motion & Prototype Designer", defaultPct: 40 },
+  {
+    tech: "Figma UI/UX & Design System",
+    category: "design",
+    roleLabel: "Lead UI/UX Designer",
+    defaultPct: 50,
+  },
+  {
+    tech: "User Research & Wireframing",
+    category: "design",
+    roleLabel: "UX Researcher & Wireframer",
+    defaultPct: 40,
+  },
+  {
+    tech: "Interactive Motion & Prototyping",
+    category: "design",
+    roleLabel: "Motion & Prototype Designer",
+    defaultPct: 40,
+  },
 
   // DevOps & Cloud
-  { tech: "Docker & Containerization", category: "devops", roleLabel: "DevOps & CI/CD Lead", defaultPct: 30 },
-  { tech: "AWS Cloud Infrastructure", category: "devops", roleLabel: "Cloud Solutions Architect", defaultPct: 40 },
-  { tech: "CI/CD Pipelines & Automation", category: "devops", roleLabel: "Release Engineer", defaultPct: 25 },
+  {
+    tech: "Docker & Containerization",
+    category: "devops",
+    roleLabel: "DevOps & CI/CD Lead",
+    defaultPct: 30,
+  },
+  {
+    tech: "AWS Cloud Infrastructure",
+    category: "devops",
+    roleLabel: "Cloud Solutions Architect",
+    defaultPct: 40,
+  },
+  {
+    tech: "CI/CD Pipelines & Automation",
+    category: "devops",
+    roleLabel: "Release Engineer",
+    defaultPct: 25,
+  },
 
   // QA & Testing
-  { tech: "E2E Cypress / Playwright QA", category: "qa", roleLabel: "Automated QA Specialist", defaultPct: 40 },
-  { tech: "Manual Device & Regression QA", category: "qa", roleLabel: "Manual QA Tester", defaultPct: 40 },
-  { tech: "API & Load Testing", category: "qa", roleLabel: "Performance & QA Tester", defaultPct: 30 },
+  {
+    tech: "E2E Cypress / Playwright QA",
+    category: "qa",
+    roleLabel: "Automated QA Specialist",
+    defaultPct: 40,
+  },
+  {
+    tech: "Manual Device & Regression QA",
+    category: "qa",
+    roleLabel: "Manual QA Tester",
+    defaultPct: 40,
+  },
+  {
+    tech: "API & Load Testing",
+    category: "qa",
+    roleLabel: "Performance & QA Tester",
+    defaultPct: 30,
+  },
 
   // CMS & E-Commerce
-  { tech: "Shopify Liquid & Apps", category: "frontend", roleLabel: "Shopify Theme Specialist", defaultPct: 60 },
-  { tech: "WordPress Custom Theme & ACF", category: "backend", roleLabel: "WordPress CMS Developer", defaultPct: 60 },
+  {
+    tech: "Shopify Liquid & Apps",
+    category: "frontend",
+    roleLabel: "Shopify Theme Specialist",
+    defaultPct: 60,
+  },
+  {
+    tech: "WordPress Custom Theme & ACF",
+    category: "backend",
+    roleLabel: "WordPress CMS Developer",
+    defaultPct: 60,
+  },
 
   // AI & Emerging
-  { tech: "AI / LLM API & Agent Integration", category: "backend", roleLabel: "AI Integration Engineer", defaultPct: 50 },
-  { tech: "Vector DB & RAG Pipeline", category: "database", roleLabel: "RAG & Search Specialist", defaultPct: 40 },
+  {
+    tech: "AI / LLM API & Agent Integration",
+    category: "backend",
+    roleLabel: "AI Integration Engineer",
+    defaultPct: 50,
+  },
+  {
+    tech: "Vector DB & RAG Pipeline",
+    category: "database",
+    roleLabel: "RAG & Search Specialist",
+    defaultPct: 40,
+  },
 ];
 
 // ─── Category Metadata Helper ────────────────────────────────────────────────
@@ -120,55 +255,55 @@ export function getCategoryMeta(category: StackCategory) {
     case "frontend":
       return {
         label: "Frontend & UI",
-        icon: <Code2 className="size-3.5 text-blue-500" />,
-        badgeClass: "bg-blue-500/10 text-blue-600 border-blue-200 dark:border-blue-900",
+        icon: <Code2 className="size-3.5 text-foreground" />,
+        badgeClass: "bg-muted text-foreground border-border dark:border-border",
       };
     case "backend":
       return {
         label: "Backend & API",
-        icon: <Server className="size-3.5 text-violet-500" />,
-        badgeClass: "bg-violet-500/10 text-violet-600 border-violet-200 dark:border-violet-900",
+        icon: <Server className="size-3.5 text-foreground" />,
+        badgeClass: "bg-muted text-foreground border-border dark:border-border",
       };
     case "mobile":
       return {
         label: "Mobile Apps",
-        icon: <Smartphone className="size-3.5 text-rose-500" />,
-        badgeClass: "bg-rose-500/10 text-rose-600 border-rose-200 dark:border-rose-900",
+        icon: <Smartphone className="size-3.5 text-destructive" />,
+        badgeClass: "bg-destructive/10 text-destructive border-destructive dark:border-destructive",
       };
     case "database":
       return {
         label: "Database & Storage",
-        icon: <Database className="size-3.5 text-emerald-500" />,
-        badgeClass: "bg-emerald-500/10 text-emerald-600 border-emerald-200 dark:border-emerald-900",
+        icon: <Database className="size-3.5 text-foreground" />,
+        badgeClass: "bg-muted text-foreground border-border dark:border-border",
       };
     case "design":
       return {
         label: "UI/UX & Creative",
-        icon: <Palette className="size-3.5 text-fuchsia-500" />,
-        badgeClass: "bg-fuchsia-500/10 text-fuchsia-600 border-fuchsia-200 dark:border-fuchsia-900",
+        icon: <Palette className="size-3.5 text-foreground" />,
+        badgeClass: "bg-muted text-foreground border-border dark:border-border",
       };
     case "devops":
       return {
         label: "DevOps & Architecture",
-        icon: <Cloud className="size-3.5 text-amber-500" />,
-        badgeClass: "bg-amber-500/10 text-amber-600 border-amber-200 dark:border-amber-900",
+        icon: <Cloud className="size-3.5 text-warning" />,
+        badgeClass: "bg-warning/10 text-warning border-warning dark:border-warning",
       };
     case "qa":
       return {
         label: "QA & Testing",
-        icon: <ShieldCheck className="size-3.5 text-cyan-500" />,
-        badgeClass: "bg-cyan-500/10 text-cyan-600 border-cyan-200 dark:border-cyan-900",
+        icon: <ShieldCheck className="size-3.5 text-foreground" />,
+        badgeClass: "bg-muted text-foreground border-border dark:border-border",
       };
     case "management":
       return {
         label: "Management & Delivery",
-        icon: <Briefcase className="size-3.5 text-indigo-500" />,
-        badgeClass: "bg-indigo-500/10 text-indigo-600 border-indigo-200 dark:border-indigo-900",
+        icon: <Briefcase className="size-3.5 text-foreground" />,
+        badgeClass: "bg-muted text-foreground border-border dark:border-border",
       };
     default:
       return {
         label: "Other Tech",
-        icon: <Cpu className="size-3.5 text-gray-500" />,
+        icon: <Cpu className="size-3.5 text-foreground" />,
         badgeClass: "bg-muted text-muted-foreground border-border",
       };
   }
@@ -211,7 +346,8 @@ export function isSkillMatch(emp: TeamRate, tech: string, category?: StackCatego
     const dept = (emp.department || "").toLowerCase();
     if (category === "design" && (dept === "design" || title.includes("design"))) return true;
     if (category === "qa" && (title.includes("qa") || title.includes("test"))) return true;
-    if (category === "management" && (dept === "management" || title.includes("manager"))) return true;
+    if (category === "management" && (dept === "management" || title.includes("manager")))
+      return true;
   }
 
   return false;
@@ -221,12 +357,12 @@ export function matchEmployeeForTech(
   techName: string,
   category: StackCategory,
   employees: TeamRate[],
-  fallbackSubstr?: string
+  fallbackSubstr?: string,
 ): TeamRate | undefined {
   // Check direct fallback name substring
   if (fallbackSubstr) {
     const direct = employees.find((e) =>
-      e.name.toLowerCase().includes(fallbackSubstr.toLowerCase())
+      e.name.toLowerCase().includes(fallbackSubstr.toLowerCase()),
     );
     if (direct) return direct;
   }
@@ -238,7 +374,7 @@ export function matchEmployeeForTech(
     (e.skills || []).some((s) => {
       const sLower = s.toLowerCase();
       return techLower.includes(sLower) || sLower.includes(techLower);
-    })
+    }),
   );
   if (bySkill) return bySkill;
 
@@ -369,7 +505,7 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
   return (
     <Card className="border-primary/30 bg-card shadow-sm overflow-hidden animate-in fade-in-50 duration-200">
       {/* ── Header Banner ── */}
-      <CardHeader className="bg-gradient-to-r from-primary/10 via-card to-background border-b pb-3">
+      <CardHeader className="from-primary/10 via-card to-background border-b pb-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -379,12 +515,16 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
               <div>
                 <CardTitle className="font-display text-base flex items-center gap-2">
                   <span>{selectedPreset.title}</span>
-                  <Badge variant="outline" className="text-[10px] font-mono border-primary/30 text-primary">
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] font-mono border-primary/30 text-primary"
+                  >
                     {selectedPreset.badge}
                   </Badge>
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Configure the tech stack layers and match each technology with specialized company talent.
+                  Configure the tech stack layers and match each technology with specialized company
+                  talent.
                 </CardDescription>
               </div>
             </div>
@@ -442,7 +582,7 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
           </div>
 
           <div className="flex items-center gap-2 p-2 rounded-lg bg-card border text-xs">
-            <Users className="size-4 text-emerald-500 shrink-0" />
+            <Users className="size-4 text-foreground shrink-0" />
             <div>
               <p className="text-[10px] text-muted-foreground">Linked Squad Size</p>
               <p className="font-bold font-mono">{summaryMetrics.headcount} members</p>
@@ -450,7 +590,7 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
           </div>
 
           <div className="flex items-center gap-2 p-2 rounded-lg bg-card border text-xs">
-            <DollarSign className="size-4 text-violet-500 shrink-0" />
+            <DollarSign className="size-4 text-foreground shrink-0" />
             <div>
               <p className="text-[10px] text-muted-foreground">Blended Hourly Rate</p>
               <p className="font-bold font-mono text-foreground">
@@ -460,7 +600,7 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
           </div>
 
           <div className="flex items-center gap-2 p-2 rounded-lg bg-card border text-xs">
-            <Clock className="size-4 text-amber-500 shrink-0" />
+            <Clock className="size-4 text-warning shrink-0" />
             <div>
               <p className="text-[10px] text-muted-foreground">Estimated Timeline</p>
               <p className="font-bold font-mono text-foreground">
@@ -476,11 +616,16 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
             <span>Configured Stack Technologies & Assigned Employees</span>
-            <span className="text-[10px] lowercase text-muted-foreground">({stackItems.length})</span>
+            <span className="text-[10px] lowercase text-muted-foreground">
+              ({stackItems.length})
+            </span>
           </span>
 
           {isApplied && (
-            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-300 text-[10px] gap-1">
+            <Badge
+              variant="outline"
+              className="bg-muted text-foreground border-border text-[10px] gap-1"
+            >
               <CheckCircle2 className="size-3" />
               Synced with Step 3 Squad
             </Badge>
@@ -504,7 +649,9 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
             {stackItems.map((item) => {
               const meta = getCategoryMeta(item.category);
               const assignedEmp = employees.find((e) => e.id === item.employeeId);
-              const hasMatch = assignedEmp ? isSkillMatch(assignedEmp, item.tech, item.category) : false;
+              const hasMatch = assignedEmp
+                ? isSkillMatch(assignedEmp, item.tech, item.category)
+                : false;
 
               return (
                 <div
@@ -513,24 +660,28 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
                 >
                   {/* Technology & Role Details */}
                   <div className="min-w-0 flex-1 flex items-start gap-3">
-                    <div className="mt-0.5 p-2 rounded-lg bg-muted/60 shrink-0">
-                      {meta.icon}
-                    </div>
+                    <div className="mt-0.5 p-2 rounded-lg bg-muted/60 shrink-0">{meta.icon}</div>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5 mb-1">
                         <span className="text-sm font-semibold text-foreground truncate">
                           {item.tech}
                         </span>
-                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 font-medium ${meta.badgeClass}`}>
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0 font-medium ${meta.badgeClass}`}
+                        >
                           {meta.label}
                         </Badge>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <Input
+                          aria-label={`Role responsibility for ${item.tech}`}
                           value={item.roleLabel}
-                          onChange={(e) => onUpdateStackItem(item.id, { roleLabel: e.target.value })}
+                          onChange={(e) =>
+                            onUpdateStackItem(item.id, { roleLabel: e.target.value })
+                          }
                           placeholder="Role responsibility..."
                           className="h-6 text-[11px] w-full max-w-xs bg-transparent border-dashed px-1.5 focus:border-solid text-muted-foreground hover:text-foreground"
                         />
@@ -544,8 +695,9 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
                       <div className="flex items-center justify-between text-[10px] mb-1">
                         <span className="text-muted-foreground">Linked Employee</span>
                         {hasMatch ? (
-                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-0.5">
-                            <Check className="size-3" /> Skill Match
+                          <span className="text-foreground dark:text-muted-foreground font-semibold flex items-center gap-0.5">
+                            <Check className="size-3" />
+                            Skill Match
                           </span>
                         ) : (
                           <span className="text-muted-foreground">Manual Assignment</span>
@@ -579,14 +731,18 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
                                 <div className="flex items-center justify-between w-full gap-2">
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5">
-                                      <span className="font-semibold text-foreground truncate">{emp.name}</span>
+                                      <span className="font-semibold text-foreground truncate">
+                                        {emp.name}
+                                      </span>
                                       {empMatches && (
-                                        <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-300 text-[9px] h-3.5 px-1">
+                                        <Badge className="bg-muted text-foreground border-border text-[9px] h-3.5 px-1">
                                           Match
                                         </Badge>
                                       )}
                                     </div>
-                                    <p className="text-[10px] text-muted-foreground truncate">{emp.job_title || "Team Member"}</p>
+                                    <p className="text-[10px] text-muted-foreground truncate">
+                                      {emp.job_title || "Team Member"}
+                                    </p>
                                   </div>
                                   <span className="font-mono text-[11px] font-semibold text-foreground shrink-0">
                                     {formatMoney(emp.hourly_cost, currency)}/hr
@@ -603,7 +759,9 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
                     <div className="w-28 text-right">
                       <div className="flex items-center justify-between text-[10px] mb-1">
                         <span className="text-muted-foreground">Allocation</span>
-                        <span className="font-mono font-bold text-primary">{item.allocationPct}%</span>
+                        <span className="font-mono font-bold text-primary">
+                          {item.allocationPct}%
+                        </span>
                       </div>
                       <Slider
                         value={[item.allocationPct]}
@@ -628,7 +786,8 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
                       className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
                       title="Remove technology"
                     >
-                      <Trash2 className="size-3.5" />
+                      <Trash2 className="size-3.5" aria-hidden="true" />
+                      <span className="sr-only">Remove {item.tech}</span>
                     </Button>
                   </div>
                 </div>
@@ -640,7 +799,8 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
         {/* Bottom Fast Action */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-2 border-t text-xs text-muted-foreground">
           <span className="text-[11px]">
-            💡 Stack choices populate <strong>Engineering, UI/UX, and QA phases</strong> with designated hourly budgets.
+            Stack choices populate <strong>Engineering, UI/UX, and QA phases</strong> with
+            designated hourly budgets.
           </span>
 
           <Button
@@ -664,7 +824,8 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
               <span>Add Stack Technology & Link Employee</span>
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Select from curated tech stack modules or enter a custom framework, then link with a qualified engineer.
+              Select from curated tech stack modules or enter a custom framework, then link with a
+              qualified engineer.
             </DialogDescription>
           </DialogHeader>
 
@@ -694,7 +855,7 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
               {/* Template Chips */}
               <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1.5 rounded-lg border bg-muted/30">
                 {POPULAR_TECH_TEMPLATES.filter(
-                  (t) => activeCategoryFilter === "all" || t.category === activeCategoryFilter
+                  (t) => activeCategoryFilter === "all" || t.category === activeCategoryFilter,
                 ).map((t) => (
                   <button
                     key={t.tech}
@@ -718,6 +879,7 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
               <div className="space-y-1">
                 <label className="text-xs font-medium">Technology Name</label>
                 <Input
+                  aria-label="Technology Name"
                   value={customTech}
                   onChange={(e) => setCustomTech(e.target.value)}
                   placeholder="e.g. Next.js 15, FastAPI, Docker..."
@@ -752,6 +914,7 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-xs font-medium">Role Responsibility Label</label>
                 <Input
+                  aria-label="Role Responsibility Label"
                   value={customRole}
                   onChange={(e) => setCustomRole(e.target.value)}
                   placeholder="e.g. Lead Frontend Engineer & Architecture"
@@ -761,26 +924,27 @@ export const BlueprintStackLinker: React.FC<BlueprintStackLinkerProps> = ({
 
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-xs font-medium">Link with Employee</label>
-                <Select
-                  value={customEmployeeId}
-                  onValueChange={setCustomEmployeeId}
-                >
+                <Select value={customEmployeeId} onValueChange={setCustomEmployeeId}>
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue placeholder="Select team member..." />
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
                     {employees.map((emp) => {
-                      const matches = customTech ? isSkillMatch(emp, customTech, customCategory) : false;
+                      const matches = customTech
+                        ? isSkillMatch(emp, customTech, customCategory)
+                        : false;
                       return (
                         <SelectItem key={emp.id} value={emp.id} className="text-xs py-1.5">
                           <div className="flex items-center justify-between w-full gap-2">
                             <div className="flex items-center gap-1.5 truncate">
-                              <span className="font-semibold text-foreground truncate">{emp.name}</span>
+                              <span className="font-semibold text-foreground truncate">
+                                {emp.name}
+                              </span>
                               <span className="text-[10px] text-muted-foreground truncate">
                                 ({emp.job_title || "Team Member"})
                               </span>
                               {matches && (
-                                <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-300 text-[9px] h-3.5 px-1">
+                                <Badge className="bg-muted text-foreground border-border text-[9px] h-3.5 px-1">
                                   Match
                                 </Badge>
                               )}

@@ -2,7 +2,8 @@ async function test() {
   const baseUrl = "http://localhost:8081";
   const email = process.env.COSTCRAFT_TEST_EMAIL;
   const password = process.env.COSTCRAFT_TEST_PASSWORD;
-  if (!email || !password) throw new Error("Set COSTCRAFT_TEST_EMAIL and COSTCRAFT_TEST_PASSWORD to run the API test.");
+  if (!email || !password)
+    throw new Error("Set COSTCRAFT_TEST_EMAIL and COSTCRAFT_TEST_PASSWORD to run the API test.");
 
   console.log("1. Testing POST /api/auth/login...");
   const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
@@ -113,8 +114,12 @@ async function test() {
   const featData = await featRes.json();
   console.log(`✓ Total Scope Features in DB: ${featData.data?.length ?? 0}`);
   if (featData.data?.length > 0) {
-    console.log(`   - Sample Feature: ${featData.data[0].icon} ${featData.data[0].label} (${featData.data[0].category})`);
-    console.log(`   - Sample Effort: Medium Dev=${featData.data[0].effort?.medium?.frontend ?? 0}h, Design=${featData.data[0].effort?.medium?.designer ?? 0}h`);
+    console.log(
+      `   - Sample Feature: ${featData.data[0].icon} ${featData.data[0].label} (${featData.data[0].category})`,
+    );
+    console.log(
+      `   - Sample Effort: Medium Dev=${featData.data[0].effort?.medium?.frontend ?? 0}h, Design=${featData.data[0].effort?.medium?.designer ?? 0}h`,
+    );
   }
 
   console.log("\n========================================================");

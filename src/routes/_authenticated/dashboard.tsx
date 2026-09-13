@@ -24,12 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { WorkspaceGate } from "@/components/WorkspaceGate";
 import { PageHeader } from "@/components/AppShell";
 import { StatCard } from "@/components/ui/stat-card";
-import {
-  useEmployees,
-  useOverheads,
-  useTeamRates,
-  type WorkspaceData,
-} from "@/lib/workspace";
+import { useEmployees, useOverheads, useTeamRates, type WorkspaceData } from "@/lib/workspace";
 import {
   formatMoney,
   annualSalaryAmount,
@@ -41,15 +36,11 @@ import {
   HOURS_PER_MONTH,
 } from "@/lib/pricing";
 import { convertCurrency } from "@/lib/currency";
+import { summarizeProjectRevenue } from "@/lib/project-status";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ProjectStatusBadge } from "@/components/projects/ProjectStatusSelect";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -60,9 +51,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
       { property: "og:title", content: "Dashboard — Alisons Technology" },
     ],
   }),
-  component: () => (
-    <WorkspaceGate>{(ws) => <DashboardInner workspace={ws} />}</WorkspaceGate>
-  ),
+  component: () => <WorkspaceGate>{(ws) => <DashboardInner workspace={ws} />}</WorkspaceGate>,
 });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -73,21 +62,27 @@ interface CalcRow {
   results: unknown;
   created_at: string;
   project_id: string | null;
-  projects: { name?: string; client_name?: string } | null;
+  projects: { name?: string; client_name?: string; status?: string } | null;
 }
 
 // ─── Pure helpers (all dynamic — zero hardcoded values) ───────────────────────
 
 /** Monthly gross salary cost for one employee (salary / 12 × employer burden) */
 function monthlyLoadedCost(emp: EmployeeRecord, baseCurrency: string): number {
-  const annual = convertCurrency(annualSalaryAmount(emp), emp.salary_currency || baseCurrency, baseCurrency);
+  const annual = convertCurrency(
+    annualSalaryAmount(emp),
+    emp.salary_currency || baseCurrency,
+    baseCurrency,
+  );
   const burden = 1 + Number(emp.employer_cost_pct || 0) / 100;
   return (annual * burden) / 12;
 }
 
 /** Total monthly payroll burn across all active employees */
 function monthlyPayroll(employees: EmployeeRecord[], baseCurrency: string): number {
-  return employees.filter((e) => e.active).reduce((s, e) => s + monthlyLoadedCost(e, baseCurrency), 0);
+  return employees
+    .filter((e) => e.active)
+    .reduce((s, e) => s + monthlyLoadedCost(e, baseCurrency), 0);
 }
 
 /** Group estimates by calendar month key "YYYY-MM" */
@@ -99,7 +94,7 @@ function groupByMonth(calcs: CalcRow[]): Record<string, CalcRow[]> {
       acc[key].push(c);
       return acc;
     },
-    {} as Record<string, CalcRow[]>
+    {} as Record<string, CalcRow[]>,
   );
 }
 
@@ -131,7 +126,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
   const currency = workspace.company!.currency;
   const policy = workspace.policy;
 
-  const { data: employees = [] } = useEmployees(companyId);
+  const { data: employees = [] } = useEmployees(workspace.canViewFinance ? companyId : undefined);
   const { data: overheads = [] } = useOverheads(companyId);
   const { data: teamRates = [] } = useTeamRates(companyId);
 
@@ -141,33 +136,29 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
       const { data, error } = await supabase
         .from("calculations")
         .select(
-          "id, label, version, results, created_at, project_id, projects(name, client_name)"
+          "id, label, version, results, created_at, project_id, projects(name, client_name, status)",
         )
         .eq("company_id", companyId)
-        .order("created_at", { ascending: false })
-        .limit(60); // 5 years worth of monthly data
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as CalcRow[];
     },
   });
 
   // ─── Dynamic cost computations ────────────────────────────────────────────
-  const activeEmployees = React.useMemo(
-    () => employees.filter((e) => e.active),
-    [employees]
-  );
+  const activeEmployees = React.useMemo(() => employees.filter((e) => e.active), [employees]);
   const activeCount = activeEmployees.length;
 
   // Monthly overhead (fully dynamic from DB)
   const monthlyOverhead = React.useMemo(
     () => overheads.reduce((s, o) => s + monthlyOverheadAmount(o), 0),
-    [overheads]
+    [overheads],
   );
 
   // Monthly payroll burden (dynamic from each employee's salary + employer cost %)
   const monthlyPayrollBurn = React.useMemo(
     () => monthlyPayroll(activeEmployees, currency),
-    [activeEmployees, currency]
+    [activeEmployees, currency],
   );
 
   // Total monthly burn = payroll + overheads
@@ -181,17 +172,29 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
   // Overhead absorbed per person per year
   const overheadPerPerson = overheadPerEmployeeAnnual(overheads, activeCount);
 
-  // Average hourly cost across team (from team-rates RPC)
+  // Average hourly cost across team (from team-rates RPC). The RPC returns leavers
+  // too, and every other metric on this page counts active staff only.
+  const activeTeamRates = React.useMemo(() => teamRates.filter((t) => t.active), [teamRates]);
   const avgHourlyCost =
-    teamRates.length > 0
-      ? teamRates.reduce((s, t) => s + t.hourly_cost, 0) / teamRates.length
+    activeTeamRates.length > 0
+      ? activeTeamRates.reduce((s, t) => s + t.hourly_cost, 0) / activeTeamRates.length
       : 0;
+
+  // "Healthy" is measured against the workspace's own target margin, not a fixed 25%.
+  const targetMarginPct = Number(policy?.default_margin_pct ?? 25) || 25;
+  const marginWarningPct = targetMarginPct * 0.6;
+  const marginVerdict = (value: number) =>
+    value >= targetMarginPct ? "good" : value >= marginWarningPct ? "warn" : "bad";
 
   // Break-even monthly revenue needed to cover burn
   const breakEvenMonthly = totalMonthlyBurn;
 
-  // Hours available per month at 100% billability
-  const hoursAvailablePerMonth = activeCount * HOURS_PER_MONTH;
+  // Capacity comes from the workspace's own working calendar, not a fixed 8h/20d month,
+  // so it agrees with the hourly costs shown alongside it.
+  const hoursPerPersonPerMonth =
+    (Number(policy?.working_days_per_year ?? 240) * Number(policy?.hours_per_day ?? 8)) / 12 ||
+    HOURS_PER_MONTH;
+  const hoursAvailablePerMonth = activeCount * hoursPerPersonPerMonth;
 
   // Department cost breakdown (dynamic)
   const deptCosts = React.useMemo(() => {
@@ -205,7 +208,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
     return Object.entries(map)
       .map(([dept, v]) => ({ dept, ...v }))
       .sort((a, b) => b.monthlyBurn - a.monthlyBurn);
-  }, [activeEmployees]);
+  }, [activeEmployees, currency]);
 
   // Per-employee monthly cost table
   const employeeMonthlyCosts = React.useMemo(
@@ -217,43 +220,50 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
           annual: monthlyLoadedCost(e, currency) * 12,
         }))
         .sort((a, b) => b.monthly - a.monthly),
-    [activeEmployees]
+    [activeEmployees, currency],
   );
+
+  // Every re-save of an estimate is a new row with a higher version, so the pipeline
+  // must count the current version of each project once — not v1 + v2 + v3 as three deals.
+  const latestCalcs = React.useMemo(() => {
+    const latestByProject = new Map<string, CalcRow>();
+    for (const c of calcs) {
+      const key = c.project_id ?? c.id;
+      const prev = latestByProject.get(key);
+      if (!prev || (c.version ?? 0) > (prev.version ?? 0)) latestByProject.set(key, c);
+    }
+    return [...latestByProject.values()];
+  }, [calcs]);
 
   // Estimate pipeline aggregates
   const results: CalculationResults[] = React.useMemo(
-    () =>
-      calcs
-        .map((c) => c.results as unknown as CalculationResults)
-        .filter(Boolean),
-    [calcs]
+    () => latestCalcs.map((c) => c.results as unknown as CalculationResults).filter(Boolean),
+    [latestCalcs],
   );
 
   const pipeline = results.reduce((s, r) => s + (r?.price ?? 0), 0);
+  const revenue = summarizeProjectRevenue(
+    latestCalcs.map((calculation) => ({
+      status: calculation.projects?.status,
+      price: Number((calculation.results as unknown as CalculationResults)?.price ?? 0),
+    })),
+  );
   const totalLaborCost = results.reduce((s, r) => s + (r?.laborCost ?? 0), 0);
   const totalProfit = results.reduce((s, r) => s + (r?.profit ?? 0), 0);
   const totalHours = results.reduce((s, r) => s + (r?.totalHours ?? 0), 0);
   const avgMargin =
-    results.length > 0
-      ? results.reduce((s, r) => s + (r?.marginPct ?? 0), 0) / results.length
-      : 0;
-  const totalCommission = results.reduce(
-    (s, r) => s + (r?.salesCommissionAmount ?? 0),
-    0
-  );
-  const netProfit = results.reduce(
-    (s, r) => s + (r?.netProfitAfterCommission ?? 0),
-    0
-  );
+    results.length > 0 ? results.reduce((s, r) => s + (r?.marginPct ?? 0), 0) / results.length : 0;
+  const totalCommission = results.reduce((s, r) => s + (r?.salesCommissionAmount ?? 0), 0);
+  const netProfit = results.reduce((s, r) => s + (r?.netProfitAfterCommission ?? 0), 0);
 
   // Month-by-month pipeline (last 6 months)
-  const byMonth = React.useMemo(() => groupByMonth(calcs), [calcs]);
+  const byMonth = React.useMemo(() => groupByMonth(latestCalcs), [latestCalcs]);
   const last6Months = lastNMonthKeys(6);
   const monthlyPipelineData = last6Months.map((key) => {
     const rows = byMonth[key] ?? [];
     const value = rows.reduce(
       (s, c) => s + ((c.results as unknown as CalculationResults)?.price ?? 0),
-      0
+      0,
     );
     return { key, label: fmtMonthKey(key), value, count: rows.length };
   });
@@ -271,11 +281,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
   const lastMonthPipeline = monthlyPipelineData.find((d) => d.key === lastMonthKey)?.value ?? 0;
 
   const pipelineTrend: "up" | "down" | "flat" =
-    lastMonthPipeline === 0
-      ? "flat"
-      : thisMonthPipeline >= lastMonthPipeline
-      ? "up"
-      : "down";
+    lastMonthPipeline === 0 ? "flat" : thisMonthPipeline >= lastMonthPipeline ? "up" : "down";
   const pipelineTrendPct =
     lastMonthPipeline > 0
       ? Math.abs(((thisMonthPipeline - lastMonthPipeline) / lastMonthPipeline) * 100).toFixed(0)
@@ -287,8 +293,8 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
 
   // Top estimate
   const topCalc =
-    calcs.length > 0
-      ? calcs.reduce((best, c) => {
+    latestCalcs.length > 0
+      ? latestCalcs.reduce((best, c) => {
           const r = c.results as unknown as CalculationResults;
           const bestR = best.results as unknown as CalculationResults;
           return (r?.price ?? 0) > (bestR?.price ?? 0) ? c : best;
@@ -310,7 +316,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
   return (
     <>
       <PageHeader
-        title={`Welcome, ${workspace.fullName?.split(" ")[0] ?? "there"} 👋`}
+        title={`Welcome, ${workspace.fullName?.split(" ")[0] ?? "there"} `}
         description={`${workspace.company!.name} · Live Financial Intelligence`}
         action={
           <Button asChild>
@@ -322,10 +328,13 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
       />
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          SECTION 1 — Monthly Burn Rate KPIs (all dynamic)
-      ═══════════════════════════════════════════════════════════════════════ */}
-      <SectionLabel icon={<Flame className="size-3.5 text-red-500" />} label="Monthly Burn Rate" />
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+ SECTION 1 — Monthly Burn Rate KPIs (all dynamic)
+ ═══════════════════════════════════════════════════════════════════════ */}
+      <SectionLabel
+        icon={<Flame className="size-3.5 text-destructive" />}
+        label="Monthly Burn Rate"
+      />
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           label="Total Monthly Burn"
           value={formatMoney(totalMonthlyBurn, currency)}
@@ -361,49 +370,73 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          SECTION 2 — Pipeline Analytics KPIs
-      ═══════════════════════════════════════════════════════════════════════ */}
-      <SectionLabel icon={<TrendingUp className="size-3.5 text-emerald-500" />} label="Estimate Pipeline Analytics" />
+ SECTION 2 — Pipeline Analytics KPIs
+ ═══════════════════════════════════════════════════════════════════════ */}
+      <SectionLabel
+        icon={<TrendingUp className="size-3.5 text-foreground" />}
+        label="Estimate Pipeline Analytics"
+      />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total Pipeline (all estimates)"
           value={formatMoney(pipeline, currency)}
-          hint={`${calcs.length} saved estimates`}
+          hint={`${latestCalcs.length} projects quoted`}
           icon={<TrendingUp className="size-3.5" />}
           accent="green"
           trend={pipelineTrend}
-          trendLabel={
-            pipelineTrendPct ? `${pipelineTrendPct}% vs last month` : undefined
-          }
+          trendLabel={pipelineTrendPct ? `${pipelineTrendPct}% vs last month` : undefined}
         />
         <StatCard
           label="Avg Profit Margin"
           value={`${avgMargin.toFixed(1)}%`}
-          hint={avgMargin >= 25 ? "Healthy" : "Below 25% target"}
+          hint={
+            marginVerdict(avgMargin) === "good"
+              ? `At or above the ${targetMarginPct}% target`
+              : `Below the ${targetMarginPct}% target`
+          }
           icon={<Target className="size-3.5" />}
-          accent={avgMargin >= 25 ? "green" : avgMargin >= 15 ? "amber" : "red"}
-          trend={avgMargin >= 25 ? "up" : avgMargin >= 15 ? "flat" : "down"}
-          trendLabel={avgMargin >= 25 ? "On target" : "Needs attention"}
+          accent={
+            marginVerdict(avgMargin) === "good"
+              ? "green"
+              : marginVerdict(avgMargin) === "warn"
+                ? "amber"
+                : "red"
+          }
+          trend={
+            marginVerdict(avgMargin) === "good"
+              ? "up"
+              : marginVerdict(avgMargin) === "warn"
+                ? "flat"
+                : "down"
+          }
+          trendLabel={marginVerdict(avgMargin) === "good" ? "On target" : "Needs attention"}
         />
         <StatCard
           label="Net Profit (after commission)"
           value={formatMoney(netProfit, currency)}
-          hint={`${formatMoney(totalCommission, currency)} Ayesha commission`}
+          hint={`${formatMoney(totalCommission, currency)} sales commission`}
           icon={<DollarSign className="size-3.5" />}
           accent={netProfit >= 0 ? "green" : "red"}
         />
         <StatCard
+          label="Booked Revenue"
+          value={formatMoney(revenue.bookedRevenue, currency)}
+          hint={`${revenue.counts.approved + revenue.counts.in_progress + revenue.counts.completed} approved or delivered projects`}
+          icon={<Wallet className="size-3.5" />}
+          accent="green"
+        />
+        <StatCard
           label="Total Billable Hours Scoped"
           value={`${Math.round(totalHours).toLocaleString()} hrs`}
-          hint={`≈ ${(totalHours / HOURS_PER_MONTH).toFixed(1)} person-months`}
+          hint={`≈ ${(totalHours / hoursPerPersonPerMonth).toFixed(1)} person-months`}
           icon={<Clock className="size-3.5" />}
           accent="blue"
         />
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          SECTION 3 — Monthly Pipeline Trend (6-month bar chart)
-      ═══════════════════════════════════════════════════════════════════════ */}
+ SECTION 3 — Monthly Pipeline Trend (6-month bar chart)
+ ═══════════════════════════════════════════════════════════════════════ */}
       <div className="mb-6 grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader className="pb-3">
@@ -422,24 +455,18 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
             <div className="flex items-end gap-2 h-40 w-full">
               {monthlyPipelineData.map((d) => {
                 const pct = Math.max(4, (d.value / maxMonthlyPipeline) * 100);
-                const burnPct = Math.min(
-                  100,
-                  (totalMonthlyBurn / maxMonthlyPipeline) * 100
-                );
+                const burnPct = Math.min(100, (totalMonthlyBurn / maxMonthlyPipeline) * 100);
                 const isCurrent = d.key === thisMonthKey;
                 const coversBurn = d.value >= totalMonthlyBurn;
                 return (
-                  <div
-                    key={d.key}
-                    className="flex-1 flex flex-col items-center gap-1.5 group"
-                  >
+                  <div key={d.key} className="flex-1 flex flex-col items-center gap-1.5 group">
                     <div className="text-[10px] font-mono text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
                       {d.count > 0 ? formatMoney(d.value, currency) : "—"}
                     </div>
                     <div className="w-full flex-1 flex items-end relative">
                       {/* Burn line marker */}
                       <div
-                        className="absolute w-full border-t-2 border-dashed border-red-400/60"
+                        className="absolute w-full border-t-2 border-dashed border-destructive"
                         style={{ bottom: `${burnPct}%` }}
                         title={`Monthly burn: ${formatMoney(totalMonthlyBurn, currency)}`}
                       />
@@ -450,10 +477,10 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                           d.count === 0
                             ? "bg-muted/40"
                             : isCurrent
-                            ? "bg-primary"
-                            : coversBurn
-                            ? "bg-emerald-500"
-                            : "bg-amber-500"
+                              ? "bg-primary"
+                              : coversBurn
+                                ? "bg-primary"
+                                : "bg-warning/10",
                         )}
                         style={{ height: `${pct}%` }}
                       />
@@ -462,14 +489,12 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                       <p
                         className={cn(
                           "text-[11px] font-semibold",
-                          isCurrent ? "text-primary" : "text-muted-foreground"
+                          isCurrent ? "text-primary" : "text-muted-foreground",
                         )}
                       >
                         {d.label}
                       </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {d.count} est.
-                      </p>
+                      <p className="text-[10px] text-muted-foreground">{d.count} est.</p>
                     </div>
                   </div>
                 );
@@ -478,11 +503,11 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
             {/* Legend */}
             <div className="flex items-center gap-4 mt-3 text-[10px] text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500 shrink-0" />
+                <span className="h-2.5 w-2.5 rounded-sm bg-primary shrink-0" />
                 Above burn
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-sm bg-amber-500 shrink-0" />
+                <span className="h-2.5 w-2.5 rounded-sm bg-warning/10 shrink-0" />
                 Below burn
               </span>
               <span className="flex items-center gap-1.5">
@@ -490,7 +515,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                 This month
               </span>
               <span className="flex items-center gap-1.5 ml-auto">
-                <span className="h-0 w-5 border-t-2 border-dashed border-red-400" />
+                <span className="h-0 w-5 border-t-2 border-dashed border-destructive" />
                 Monthly burn ({formatMoney(totalMonthlyBurn, currency)})
               </span>
             </div>
@@ -501,7 +526,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="font-display text-sm font-semibold flex items-center gap-2">
-              <BarChart3 className="size-4 text-emerald-500" />
+              <BarChart3 className="size-4 text-foreground" />
               Revenue Waterfall
             </CardTitle>
             <CardDescription>All estimates aggregated</CardDescription>
@@ -516,25 +541,42 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                 {(
                   [
                     { label: "Quote (Pipeline)", value: pipeline, color: "bg-primary" },
-                    { label: "Labor Cost", value: totalLaborCost, color: "bg-blue-500" },
-                    { label: "Gross Profit", value: totalProfit, color: totalProfit >= 0 ? "bg-emerald-500" : "bg-red-500" },
-                    { label: "Ayesha Commission", value: totalCommission, color: "bg-amber-500" },
-                    { label: "Net Profit", value: netProfit, color: netProfit >= 0 ? "bg-emerald-600" : "bg-red-600" },
+                    { label: "Labor Cost", value: totalLaborCost, color: "bg-primary" },
+                    {
+                      label: "Gross Profit",
+                      value: totalProfit,
+                      color: totalProfit >= 0 ? "bg-primary" : "bg-destructive/10",
+                    },
+                    { label: "Sales commission", value: totalCommission, color: "bg-warning/10" },
+                    {
+                      label: "Net Profit",
+                      value: netProfit,
+                      color: netProfit >= 0 ? "bg-primary" : "bg-destructive/10",
+                    },
                   ] as const
                 ).map(({ label, value, color }) => {
-                  const barPct = pipeline > 0
-                    ? Math.max(4, Math.min(100, (Math.abs(value) / pipeline) * 100))
-                    : 0;
+                  const barPct =
+                    pipeline > 0
+                      ? Math.max(4, Math.min(100, (Math.abs(value) / pipeline) * 100))
+                      : 0;
                   return (
                     <div key={label} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-muted-foreground">{label}</span>
-                        <span className={cn("font-mono font-semibold", value < 0 ? "text-red-500" : "text-foreground")}>
+                        <span
+                          className={cn(
+                            "font-mono font-semibold",
+                            value < 0 ? "text-destructive" : "text-foreground",
+                          )}
+                        >
                           {formatMoney(value, currency)}
                         </span>
                       </div>
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div className={cn("h-full rounded-full transition-all duration-700", color)} style={{ width: `${barPct}%` }} />
+                        <div
+                          className={cn("h-full rounded-full transition-all duration-700", color)}
+                          style={{ width: `${barPct}%` }}
+                        />
                       </div>
                     </div>
                   );
@@ -546,28 +588,33 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          SECTION 4 — Per-Department Monthly Cost + Overhead Breakdown
-      ═══════════════════════════════════════════════════════════════════════ */}
-      <SectionLabel icon={<PieChart className="size-3.5 text-blue-500" />} label="Cost by Department & Overhead" />
+ SECTION 4 — Per-Department Monthly Cost + Overhead Breakdown
+ ═══════════════════════════════════════════════════════════════════════ */}
+      <SectionLabel
+        icon={<PieChart className="size-3.5 text-foreground" />}
+        label="Cost by Department & Overhead"
+      />
       <div className="mb-6 grid gap-4 lg:grid-cols-3">
-
         {/* Per-department monthly cost */}
         <Card className="lg:col-span-1">
           <CardHeader className="pb-3">
             <CardTitle className="font-display text-sm font-semibold flex items-center gap-2">
-              <Briefcase className="size-4 text-blue-500" />
+              <Briefcase className="size-4 text-foreground" />
               Monthly Cost by Department
             </CardTitle>
             <CardDescription>Payroll burden incl. employer costs</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {deptCosts.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4 text-center">No active employees</p>
+              <p className="text-xs text-muted-foreground py-4 text-center">
+                {workspace.canViewFinance
+                  ? "No active employees"
+                  : "Finance data is restricted to authorized roles."}
+              </p>
             ) : (
               deptCosts.map(({ dept, count, monthlyBurn }) => {
-                const pct = monthlyPayrollBurn > 0
-                  ? Math.round((monthlyBurn / monthlyPayrollBurn) * 100)
-                  : 0;
+                const pct =
+                  monthlyPayrollBurn > 0 ? Math.round((monthlyBurn / monthlyPayrollBurn) * 100) : 0;
                 return (
                   <div key={dept} className="space-y-1">
                     <div className="flex items-center justify-between text-xs">
@@ -583,7 +630,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                     </div>
                     <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-blue-500 transition-all duration-700"
+                        className="h-full rounded-full bg-primary transition-all duration-700"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -593,7 +640,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
             )}
             <div className="pt-2 border-t mt-2 flex items-center justify-between text-xs font-semibold">
               <span>Total / month</span>
-              <span className="font-mono text-blue-600 dark:text-blue-400">
+              <span className="font-mono text-foreground dark:text-muted-foreground">
                 {formatMoney(monthlyPayrollBurn, currency)}
               </span>
             </div>
@@ -604,20 +651,21 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
         <Card className="lg:col-span-1">
           <CardHeader className="pb-3">
             <CardTitle className="font-display text-sm font-semibold flex items-center gap-2">
-              <Layers className="size-4 text-amber-500" />
+              <Layers className="size-4 text-warning" />
               Overhead Breakdown
             </CardTitle>
             <CardDescription>Fixed monthly costs by item</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2.5">
             {overheads.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-4 text-center">No overheads configured</p>
+              <p className="text-xs text-muted-foreground py-4 text-center">
+                No overheads configured
+              </p>
             ) : (
               overheads.map((o) => {
                 const monthlyAmount = monthlyOverheadAmount(o);
-                const pct = monthlyOverhead > 0
-                  ? Math.round((monthlyAmount / monthlyOverhead) * 100)
-                  : 0;
+                const pct =
+                  monthlyOverhead > 0 ? Math.round((monthlyAmount / monthlyOverhead) * 100) : 0;
                 return (
                   <div key={o.id} className="space-y-1">
                     <div className="flex items-center justify-between text-xs gap-2">
@@ -635,7 +683,10 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                       </div>
                     </div>
                     <div className="h-1 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} />
+                      <div
+                        className="h-full bg-warning/10 rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
                   </div>
                 );
@@ -643,7 +694,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
             )}
             <div className="pt-2 border-t flex items-center justify-between text-xs font-semibold">
               <span>Total / month</span>
-              <span className="font-mono text-amber-600 dark:text-amber-400">
+              <span className="font-mono text-warning dark:text-warning">
                 {formatMoney(monthlyOverhead, currency)}
               </span>
             </div>
@@ -654,7 +705,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
         <Card className="lg:col-span-1">
           <CardHeader className="pb-3">
             <CardTitle className="font-display text-sm font-semibold flex items-center gap-2">
-              <Wallet className="size-4 text-red-500" />
+              <Wallet className="size-4 text-destructive" />
               Monthly Burn Summary
             </CardTitle>
             <CardDescription>Full cost visibility</CardDescription>
@@ -666,29 +717,28 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                   label: "Payroll (with burden)",
                   value: monthlyPayrollBurn,
                   annual: annualPayroll,
-                  color: "bg-blue-500",
+                  color: "bg-primary",
                 },
                 {
                   label: "Fixed Overheads",
                   value: monthlyOverhead,
                   annual: annualOverhead,
-                  color: "bg-amber-500",
+                  color: "bg-warning/10",
                 },
               ] as const
             ).map(({ label, value, annual, color }) => {
-              const pct = totalMonthlyBurn > 0
-                ? Math.round((value / totalMonthlyBurn) * 100)
-                : 0;
+              const pct = totalMonthlyBurn > 0 ? Math.round((value / totalMonthlyBurn) * 100) : 0;
               return (
                 <div key={label} className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">{label}</span>
-                    <span className="font-mono font-semibold">
-                      {formatMoney(value, currency)}
-                    </span>
+                    <span className="font-mono font-semibold">{formatMoney(value, currency)}</span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div className={cn("h-full rounded-full", color)} style={{ width: `${pct}%` }} />
+                    <div
+                      className={cn("h-full rounded-full", color)}
+                      style={{ width: `${pct}%` }}
+                    />
                   </div>
                   <p className="text-[10px] text-muted-foreground text-right">
                     {formatMoney(annual, currency)} / year · {pct}% of burn
@@ -701,23 +751,55 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
             <div className="grid grid-cols-2 gap-2 pt-2 border-t">
               {(
                 [
-                  { label: "Total / month", value: formatMoney(totalMonthlyBurn, currency), highlight: true },
-                  { label: "Total / year", value: formatMoney(annualBurn, currency), highlight: false },
-                  { label: "Cost / person / mo", value: activeCount > 0 ? formatMoney(totalMonthlyBurn / activeCount, currency) : "—", highlight: false },
-                  { label: "Avg hourly cost", value: formatMoney(avgHourlyCost, currency), highlight: false },
-                  { label: "Hours avail. / mo", value: `${hoursAvailablePerMonth.toLocaleString()} h`, highlight: false },
-                  { label: "Overhead / person / yr", value: formatMoney(overheadPerPerson, currency), highlight: false },
+                  {
+                    label: "Total / month",
+                    value: formatMoney(totalMonthlyBurn, currency),
+                    highlight: true,
+                  },
+                  {
+                    label: "Total / year",
+                    value: formatMoney(annualBurn, currency),
+                    highlight: false,
+                  },
+                  {
+                    label: "Cost / person / mo",
+                    value:
+                      activeCount > 0 ? formatMoney(totalMonthlyBurn / activeCount, currency) : "—",
+                    highlight: false,
+                  },
+                  {
+                    label: "Avg hourly cost",
+                    value: formatMoney(avgHourlyCost, currency),
+                    highlight: false,
+                  },
+                  {
+                    label: "Hours avail. / mo",
+                    value: `${hoursAvailablePerMonth.toLocaleString()} h`,
+                    highlight: false,
+                  },
+                  {
+                    label: "Overhead / person / yr",
+                    value: formatMoney(overheadPerPerson, currency),
+                    highlight: false,
+                  },
                 ] as const
               ).map(({ label, value, highlight }) => (
                 <div
                   key={label}
                   className={cn(
                     "rounded-lg p-2 text-xs",
-                    highlight ? "bg-red-500/10 border border-red-200 dark:border-red-800" : "bg-muted/40"
+                    highlight
+                      ? "bg-destructive/10 border border-destructive dark:border-destructive"
+                      : "bg-muted/40",
                   )}
                 >
                   <p className="text-muted-foreground">{label}</p>
-                  <p className={cn("font-bold font-mono mt-0.5", highlight ? "text-red-600 dark:text-red-400" : "text-foreground")}>
+                  <p
+                    className={cn(
+                      "font-bold font-mono mt-0.5",
+                      highlight ? "text-destructive dark:text-destructive" : "text-foreground",
+                    )}
+                  >
                     {value}
                   </p>
                 </div>
@@ -728,27 +810,33 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          SECTION 5 — Per-Employee Monthly Cost Table (dynamic)
-      ═══════════════════════════════════════════════════════════════════════ */}
-      <SectionLabel icon={<Receipt className="size-3.5 text-purple-500" />} label="Per-Employee Monthly Cost (Dynamic)" />
+ SECTION 5 — Per-Employee Monthly Cost Table (dynamic)
+ ═══════════════════════════════════════════════════════════════════════ */}
+      <SectionLabel
+        icon={<Receipt className="size-3.5 text-foreground" />}
+        label="Per-Employee Monthly Cost (Dynamic)"
+      />
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="font-display text-sm font-semibold">
             Individual Monthly Cost Breakdown
           </CardTitle>
           <CardDescription>
-            Gross salary ÷ 12 × employer burden % — sorted by highest cost.
-            All values recalculate automatically when salaries change.
+            Gross salary ÷ 12 × employer burden % — sorted by highest cost. All values recalculate
+            automatically when salaries change.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0 divide-y">
           {employeeMonthlyCosts.length === 0 ? (
-            <p className="p-6 text-center text-xs text-muted-foreground">No active employees</p>
+            <p className="p-6 text-center text-xs text-muted-foreground">
+              {workspace.canViewFinance
+                ? "No active employees"
+                : "Finance data is restricted to authorized roles."}
+            </p>
           ) : (
             employeeMonthlyCosts.map(({ emp, monthly, annual }) => {
-              const pct = monthlyPayrollBurn > 0
-                ? Math.round((monthly / monthlyPayrollBurn) * 100)
-                : 0;
+              const pct =
+                monthlyPayrollBurn > 0 ? Math.round((monthly / monthlyPayrollBurn) * 100) : 0;
               return (
                 <div
                   key={emp.id}
@@ -758,13 +846,11 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                     <p className="font-semibold text-foreground">{emp.name}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {emp.job_title ?? "—"} · {emp.department ?? "—"} ·{" "}
-                      <span className="font-mono">
-                        {emp.employer_cost_pct}% burden
-                      </span>
+                      <span className="font-mono">{emp.employer_cost_pct}% burden</span>
                     </p>
                     <div className="mt-1.5 h-1 bg-muted rounded-full w-full max-w-[200px] overflow-hidden">
                       <div
-                        className="h-full bg-purple-500 rounded-full"
+                        className="h-full bg-primary rounded-full"
                         style={{ width: `${Math.max(2, pct)}%` }}
                       />
                     </div>
@@ -784,7 +870,7 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                     </div>
                     <Badge
                       variant="outline"
-                      className="text-[10px] bg-purple-500/10 text-purple-600 border-purple-200 dark:border-purple-800"
+                      className="text-[10px] bg-muted text-foreground border-border dark:border-border"
                     >
                       {pct}% of payroll
                     </Badge>
@@ -803,61 +889,67 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
       </Card>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          SECTION 6 — Spotlight + This Month + Recent Estimates
-      ═══════════════════════════════════════════════════════════════════════ */}
+ SECTION 6 — Spotlight + This Month + Recent Estimates
+ ═══════════════════════════════════════════════════════════════════════ */}
       {(topCalc || thisMonthCalcs.length > 0) && (
         <div className="mb-6 grid gap-4 sm:grid-cols-2">
-          {topCalc && (() => {
-            const r = topCalc.results as unknown as CalculationResults;
-            return (
-              <Card className="border-primary/30 bg-gradient-to-br from-primary/5 via-card to-background">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <Target className="size-4 text-primary" />
-                    <CardTitle className="font-display text-sm font-semibold">
-                      🏆 Highest Value Estimate
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div>
-                    <p className="font-semibold text-foreground">
-                      {(topCalc.projects as { name?: string } | null)?.name ?? "Untitled"} · {topCalc.label}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {new Date(topCalc.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    {(
-                      [
-                        { label: "Quote", val: formatMoney(r?.price ?? 0, currency) },
-                        { label: "Margin", val: `${(r?.marginPct ?? 0).toFixed(1)}%` },
-                        { label: "Hours", val: `${Math.round(r?.totalHours ?? 0)}h` },
-                      ] as const
-                    ).map(({ label, val }) => (
-                      <div key={label} className="rounded-lg bg-card border p-2 text-center">
-                        <p className="text-muted-foreground">{label}</p>
-                        <p className="font-bold font-mono mt-0.5 text-primary">{val}</p>
-                      </div>
-                    ))}
-                  </div>
-                  {topCalc.project_id && (
-                    <Button asChild size="sm" variant="outline" className="w-full">
-                      <Link to="/projects/$id" params={{ id: topCalc.project_id }} className="gap-1.5">
-                        Open Project <ChevronRight className="size-3.5" />
-                      </Link>
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })()}
+          {topCalc &&
+            (() => {
+              const r = topCalc.results as unknown as CalculationResults;
+              return (
+                <Card className="border-primary/30 from-primary/5 via-card to-background">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center gap-2">
+                      <Target className="size-4 text-primary" />
+                      <CardTitle className="font-display text-sm font-semibold">
+                        Highest Value Estimate
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div>
+                      <p className="font-semibold text-foreground">
+                        {(topCalc.projects as { name?: string } | null)?.name ?? "Untitled"} ·{" "}
+                        {topCalc.label}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {new Date(topCalc.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      {(
+                        [
+                          { label: "Quote", val: formatMoney(r?.price ?? 0, currency) },
+                          { label: "Margin", val: `${(r?.marginPct ?? 0).toFixed(1)}%` },
+                          { label: "Hours", val: `${Math.round(r?.totalHours ?? 0)}h` },
+                        ] as const
+                      ).map(({ label, val }) => (
+                        <div key={label} className="rounded-lg bg-card border p-2 text-center">
+                          <p className="text-muted-foreground">{label}</p>
+                          <p className="font-bold font-mono mt-0.5 text-primary">{val}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {topCalc.project_id && (
+                      <Button asChild size="sm" variant="outline" className="w-full">
+                        <Link
+                          to="/projects/$id"
+                          params={{ id: topCalc.project_id }}
+                          className="gap-1.5"
+                        >
+                          Open Project <ChevronRight className="size-3.5" />
+                        </Link>
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
-                <CalendarDays className="size-4 text-blue-500" />
+                <CalendarDays className="size-4 text-foreground" />
                 <CardTitle className="font-display text-sm font-semibold">
                   This Month Snapshot
                 </CardTitle>
@@ -886,10 +978,15 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                     </div>
                     <div className="rounded-lg bg-muted/40 border p-2.5">
                       <p className="text-muted-foreground">vs Monthly Burn</p>
-                      <p className={cn("font-bold text-sm font-mono mt-0.5",
-                        thisMonthPipeline >= totalMonthlyBurn ? "text-emerald-600" : "text-red-500"
-                      )}>
-                        {thisMonthPipeline >= totalMonthlyBurn ? "✓ Covers burn" : "⚠ Below burn"}
+                      <p
+                        className={cn(
+                          "font-bold text-sm font-mono mt-0.5",
+                          thisMonthPipeline >= totalMonthlyBurn
+                            ? "text-foreground"
+                            : "text-destructive",
+                        )}
+                      >
+                        {thisMonthPipeline >= totalMonthlyBurn ? "Covers burn" : "Below burn"}
                       </p>
                     </div>
                     <div className="rounded-lg bg-muted/40 border p-2.5">
@@ -902,17 +999,23 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                     </div>
                   </div>
                   {lastMonthPipeline > 0 && (
-                    <div className={cn(
-                      "rounded-lg p-2.5 text-xs flex items-center gap-2",
-                      pipelineTrend === "up"
-                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                        : "bg-red-500/10 text-red-700 dark:text-red-400"
-                    )}>
-                      {pipelineTrend === "up"
-                        ? <TrendingUp className="size-3.5 shrink-0" />
-                        : <AlertTriangle className="size-3.5 shrink-0" />}
+                    <div
+                      className={cn(
+                        "rounded-lg p-2.5 text-xs flex items-center gap-2",
+                        pipelineTrend === "up"
+                          ? "bg-muted text-foreground dark:text-muted-foreground"
+                          : "bg-destructive/10 text-destructive dark:text-destructive",
+                      )}
+                    >
+                      {pipelineTrend === "up" ? (
+                        <TrendingUp className="size-3.5 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="size-3.5 shrink-0" />
+                      )}
                       <span className="font-medium">
-                        {pipelineTrend === "up" ? "+" : "-"}{pipelineTrendPct}% vs last month ({formatMoney(lastMonthPipeline, currency)})
+                        {pipelineTrend === "up" ? "+" : "-"}
+                        {pipelineTrendPct}% vs last month (
+                        {formatMoney(lastMonthPipeline, currency)})
                       </span>
                     </div>
                   )}
@@ -924,8 +1027,8 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          SECTION 7 — Recent Estimates Table
-      ═══════════════════════════════════════════════════════════════════════ */}
+ SECTION 7 — Recent Estimates Table
+ ═══════════════════════════════════════════════════════════════════════ */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -956,19 +1059,21 @@ function DashboardInner({ workspace }: { workspace: WorkspaceData }) {
                     <span className="text-muted-foreground font-normal">· {c.label}</span>
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {new Date(c.created_at).toLocaleDateString()} ·{" "}
-                    {Math.round(r?.totalHours ?? 0)} hrs ·{" "}
-                    {(r?.blendedRate ?? 0) > 0 && `${formatMoney(r.blendedRate, currency)}/hr blended`}
+                    {new Date(c.created_at).toLocaleDateString()} · {Math.round(r?.totalHours ?? 0)}{" "}
+                    hrs ·{" "}
+                    {(r?.blendedRate ?? 0) > 0 &&
+                      `${formatMoney(r.blendedRate, currency)}/hr blended`}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  <ProjectStatusBadge status={c.projects?.status} />
                   <Badge
                     variant="outline"
                     className={cn(
                       "text-[10px] font-semibold",
-                      margin >= 25
-                        ? "bg-emerald-500/10 text-emerald-600 border-emerald-200 dark:border-emerald-800"
-                        : "bg-amber-500/10 text-amber-600 border-amber-200 dark:border-amber-800"
+                      marginVerdict(margin) === "good"
+                        ? "bg-muted text-foreground border-border dark:border-border"
+                        : "bg-warning/10 text-warning border-warning dark:border-warning",
                     )}
                   >
                     {margin.toFixed(1)}% margin

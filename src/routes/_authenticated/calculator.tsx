@@ -10,6 +10,7 @@ import {
   calculate,
   emptyInputs,
   validateInputs,
+  unitToHours,
   formatMoney,
   type Allocation,
   type CalculationInputs,
@@ -41,6 +42,9 @@ import {
   History,
   BookOpen,
   GitBranch,
+  ClipboardList,
+  Sliders,
+  type LucideIcon,
 } from "lucide-react";
 import { ScopeEngine } from "@/components/scope-engine/ScopeEngine";
 import { FeatureLibraryManager } from "@/components/scope-engine/FeatureLibraryManager";
@@ -80,6 +84,7 @@ import {
   BlueprintStackLinker,
   matchEmployeeForTech,
 } from "@/components/calculator/BlueprintStackLinker";
+import { matchRoles } from "@/lib/role-matching";
 import { cn } from "@/lib/utils";
 
 // ─── Wizard Step Definitions ──────────────────────────────────────────────────
@@ -90,7 +95,7 @@ interface WizardStepMeta {
   title: string;
   shortTitle: string;
   subtitle: string;
-  icon: string;
+  icon: LucideIcon;
 }
 
 const WIZARD_STEPS: WizardStepMeta[] = [
@@ -99,35 +104,35 @@ const WIZARD_STEPS: WizardStepMeta[] = [
     title: "1. Project & Blueprint",
     shortTitle: "Blueprint",
     subtitle: "Define basics & select software scope template",
-    icon: "📋",
+    icon: ClipboardList,
   },
   {
     id: 2,
     title: "2. Scope & Features",
     shortTitle: "Features",
     subtitle: "Drag & drop features from DB library into phases",
-    icon: "🎯",
+    icon: Crosshair,
   },
   {
     id: 3,
     title: "3. Team & Allocations",
     shortTitle: "Team Squad",
     subtitle: "Auto-adjust squad durations & phase line items",
-    icon: "👥",
+    icon: Users,
   },
   {
     id: 4,
     title: "4. Retainer & Risk",
     shortTitle: "Risk & Extras",
     subtitle: "Support retainer, tools, margin & overheads",
-    icon: "🛡️",
+    icon: ShieldCheck,
   },
   {
     id: 5,
     title: "5. Executive Proposal",
     shortTitle: "Executive Quote",
     subtitle: "Multi-unit rate cards, waterfall & save/export",
-    icon: "📊",
+    icon: BarChart3,
   },
 ];
 
@@ -160,7 +165,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
   const { data: employees = [] } = useTeamRates(companyId);
   const { data: overheads = [] } = useOverheads(companyId);
   const policy = workspace.policy!;
-  const { presets } = usePresetLibrary();
+  const { presets } = usePresetLibrary(companyId);
 
   // ─── State ──────────────────────────────────────────────────────────────────
   const [inputs, setInputs] = useState<CalculationInputs>(() => emptyInputs(policy, currency));
@@ -301,24 +306,22 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
         setActiveStack([]);
       }
 
-      const durationHours =
-        preset.defaultDurationUnit === "days"
-          ? preset.defaultDurationValue * 8
-          : preset.defaultDurationUnit === "weeks"
-            ? preset.defaultDurationValue * 40
-            : preset.defaultDurationUnit === "months"
-              ? preset.defaultDurationValue * 160
-              : preset.defaultDurationValue;
+      const durationHours = unitToHours(
+        preset.defaultDurationValue,
+        preset.defaultDurationUnit,
+        Number(policy.hours_per_day) || 8,
+        Number(inputs.hoursPerMonth) || 160,
+      );
 
       const designAllocations: Allocation[] = [];
       const devAllocations: Allocation[] = [];
       const qaAllocations: Allocation[] = [];
 
-      for (const s of preset.suggestedRoles) {
-        const emp = employees.find((e) =>
-          e.name.toLowerCase().includes(s.nameSubstr.toLowerCase()),
-        );
-        if (!emp) continue;
+      // Blueprints name a role, not a person, so resolve against title, skills and
+      // department. Roles nobody fills are reported rather than silently dropped.
+      const { matched, unmatched } = matchRoles(preset.suggestedRoles, employees);
+
+      for (const { role: s, employee: emp } of matched) {
         const hours = Math.round(durationHours * (s.allocationPct / 100));
         const alloc: Allocation = {
           id: `alloc-${emp.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -375,9 +378,17 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
           `${preset.description} (Target: ${preset.defaultDurationValue} ${preset.defaultDurationUnit})`,
         phases: newPhases.length > 0 ? newPhases : prev.phases,
       }));
-      toast.success(`✨ Loaded "${preset.title}" blueprint with team allocations!`);
+      if (unmatched.length) {
+        toast.warning(
+          `No one matches ${unmatched.map((r) => r.label).join(", ")} — ` +
+            `${unmatched.length} role${unmatched.length === 1 ? "" : "s"} were left out. ` +
+            `Add a matching job title in People, or add them by hand.`,
+        );
+      } else {
+        toast.success(`Loaded "${preset.title}" blueprint with team allocations.`);
+      }
     },
-    [employees],
+    [employees, inputs.hoursPerMonth, policy.hours_per_day],
   );
 
   // ─── Apply Stack to Squad (generates phases from activeStack) ──────────────
@@ -389,70 +400,64 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
 
     const selectedPreset = presets.find((p) => p.id === selectedPresetId);
     const durationHours = selectedPreset
-      ? selectedPreset.defaultDurationUnit === "days"
-        ? selectedPreset.defaultDurationValue * 8
-        : selectedPreset.defaultDurationUnit === "weeks"
-          ? selectedPreset.defaultDurationValue * 40
-          : selectedPreset.defaultDurationUnit === "months"
-            ? selectedPreset.defaultDurationValue * 160
-            : selectedPreset.defaultDurationValue
-      : 160; // default 1 month
+      ? unitToHours(
+          selectedPreset.defaultDurationValue,
+          selectedPreset.defaultDurationUnit,
+          Number(policy.hours_per_day) || 8,
+          Number(inputs.hoursPerMonth) || 160,
+        )
+      : Number(inputs.hoursPerMonth) || 160;
 
-    const designAllocs: Allocation[] = [];
-    const devAllocs: Allocation[] = [];
-    const mobileAllocs: Allocation[] = [];
-    const qaAllocs: Allocation[] = [];
-    const mgmtAllocs: Allocation[] = [];
-
-    const seenDesign = new Set<string>();
-    const seenDev = new Set<string>();
-    const seenMobile = new Set<string>();
-    const seenQa = new Set<string>();
-    const seenMgmt = new Set<string>();
+    // One person can legitimately cover several layers of a stack. Merge their
+    // allocations per phase by summing the hours — dropping the repeats would
+    // silently delete work the linker panel has already counted and displayed.
+    const buckets = {
+      design: new Map<string, Allocation>(),
+      mobile: new Map<string, Allocation>(),
+      qa: new Map<string, Allocation>(),
+      management: new Map<string, Allocation>(),
+      dev: new Map<string, Allocation>(),
+    };
+    const bucketFor = (category: string) => {
+      switch (category) {
+        case "design":
+        case "mobile":
+        case "qa":
+        case "management":
+          return buckets[category];
+        default:
+          // frontend, backend, database, devops, other all deliver in the build phase
+          return buckets.dev;
+      }
+    };
 
     for (const item of activeStack) {
       const emp = employees.find((e) => e.id === item.employeeId);
       if (!emp) continue;
 
       const hours = Math.round(durationHours * (item.allocationPct / 100));
-      const allocId = `alloc-stack-${emp.id}-${item.id}-${Math.random().toString(36).slice(2, 6)}`;
-      const alloc: Allocation = {
-        id: allocId,
-        employeeId: emp.id,
-        label: item.roleLabel || item.tech,
-        hours,
-        hourlyCost: emp.hourly_cost,
-      };
-
-      // Route to phase by stack category
-      if (item.category === "design") {
-        if (!seenDesign.has(emp.id)) {
-          designAllocs.push(alloc);
-          seenDesign.add(emp.id);
-        }
-      } else if (item.category === "mobile") {
-        if (!seenMobile.has(emp.id)) {
-          mobileAllocs.push(alloc);
-          seenMobile.add(emp.id);
-        }
-      } else if (item.category === "qa") {
-        if (!seenQa.has(emp.id)) {
-          qaAllocs.push(alloc);
-          seenQa.add(emp.id);
-        }
-      } else if (item.category === "management") {
-        if (!seenMgmt.has(emp.id)) {
-          mgmtAllocs.push(alloc);
-          seenMgmt.add(emp.id);
-        }
+      const bucket = bucketFor(item.category);
+      const existing = bucket.get(emp.id);
+      const label = item.roleLabel || item.tech;
+      if (existing) {
+        existing.hours += hours;
+        if (!existing.label.includes(label)) existing.label = `${existing.label} + ${label}`;
       } else {
-        // frontend, backend, database, devops, other → dev phase
-        if (!seenDev.has(emp.id)) {
-          devAllocs.push(alloc);
-          seenDev.add(emp.id);
-        }
+        bucket.set(emp.id, {
+          id: `alloc-stack-${emp.id}-${item.id}`,
+          employeeId: emp.id,
+          label,
+          hours,
+          hourlyCost: emp.hourly_cost,
+        });
       }
     }
+
+    const designAllocs = [...buckets.design!.values()];
+    const mobileAllocs = [...buckets.mobile!.values()];
+    const qaAllocs = [...buckets.qa!.values()];
+    const mgmtAllocs = [...buckets.management!.values()];
+    const devAllocs = [...buckets.dev!.values()];
 
     const phases: Phase[] = [];
     if (designAllocs.length > 0) {
@@ -493,9 +498,9 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
     }));
     setStackApplied(true);
     toast.success(
-      `🚀 Stack applied! ${phases.length} phases with ${activeStack.length} tech layers synced to Step 3.`,
+      `Stack applied! ${phases.length} phases with ${activeStack.length} tech layers synced to Step 3.`,
     );
-  }, [activeStack, employees, selectedPresetId]);
+  }, [activeStack, employees, inputs.hoursPerMonth, policy.hours_per_day, selectedPresetId]);
 
   // ─── Scope Application ─────────────────────────────────────────────────────
 
@@ -513,7 +518,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
       }));
       setCompletedSteps((prev) => new Set([...prev, 2]));
       goToStep(3);
-      toast.success("✅ Scope applied! Review and fine-tune team allocations in Step 3.");
+      toast.success("Scope applied! Review and fine-tune team allocations in Step 3.");
     },
     [goToStep],
   );
@@ -670,73 +675,97 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
       }
       setSaving(true);
 
-      let targetId = activeProjectId ?? null;
-      if (targetId) {
-        await supabase
-          .from("projects")
-          .update({
-            name: inputs.projectName || "Untitled Project",
-            client_name: inputs.clientName || null,
-            description: inputs.description || null,
-          })
-          .eq("id", targetId);
-      } else {
-        const { data: project, error: pErr } = await supabase
-          .from("projects")
-          .insert({
-            company_id: companyId,
-            name: inputs.projectName || "New Estimate Project",
-            client_name: inputs.clientName || null,
-            description: inputs.description || null,
-            created_by: workspace.userId,
-          })
-          .select("id")
-          .single();
-        if (pErr || !project) {
-          setSaving(false);
-          toast.error(pErr?.message ?? "Could not save");
-          return;
-        }
-        targetId = project.id;
-        setActiveProjectId(targetId);
-      }
-
-      const { data: last } = await supabase
-        .from("calculations")
-        .select("version")
-        .eq("project_id", targetId)
-        .order("version", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const nextVersion = Number(last?.version ?? 0) + 1;
-      const label =
-        typeof customLabel === "string" && customLabel.trim()
-          ? customLabel.trim()
-          : `Version ${nextVersion}`;
-
-      const { error: cErr } = await supabase.from("calculations").insert({
-        company_id: companyId,
-        project_id: targetId,
-        label,
-        version: nextVersion,
-        inputs: inputs as never,
-        results: results as never,
-        created_by: workspace.userId,
+      let { data: saved, error: saveError } = await supabase.rpc("save_calculation", {
+        _project_id: activeProjectId,
+        _project_name: inputs.projectName || "New Estimate Project",
+        _client_name: inputs.clientName || null,
+        _description: inputs.description || null,
+        _label: typeof customLabel === "string" && customLabel.trim() ? customLabel.trim() : null,
+        _inputs: inputs as never,
+        _results: results as never,
       });
+      if (saveError && /function|schema cache|not found/i.test(String(saveError.message))) {
+        // Keep older environments usable until the transactional migration is applied.
+        let targetId = activeProjectId;
+        if (targetId) {
+          const { error } = await supabase
+            .from("projects")
+            .update({
+              name: inputs.projectName || "Untitled Project",
+              client_name: inputs.clientName || null,
+              description: inputs.description || null,
+            })
+            .eq("id", targetId);
+          if (error) saveError = error;
+        } else {
+          const { data: project, error } = await supabase
+            .from("projects")
+            .insert({
+              company_id: companyId,
+              name: inputs.projectName || "New Estimate Project",
+              client_name: inputs.clientName || null,
+              description: inputs.description || null,
+              created_by: workspace.userId,
+            })
+            .select("id")
+            .single();
+          if (error || !project) saveError = error ?? { message: "Could not create project" };
+          else targetId = project.id;
+        }
+        if (!saveError && targetId) {
+          const { data: last } = await supabase
+            .from("calculations")
+            .select("version")
+            .eq("project_id", targetId)
+            .order("version", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const nextVersion = Number(last?.version ?? 0) + 1;
+          const label =
+            typeof customLabel === "string" && customLabel.trim()
+              ? customLabel.trim()
+              : `Version ${nextVersion}`;
+          const { data: calculation, error } = await supabase
+            .from("calculations")
+            .insert({
+              company_id: companyId,
+              project_id: targetId,
+              label,
+              version: nextVersion,
+              inputs: inputs as never,
+              results: results as never,
+              created_by: workspace.userId,
+            })
+            .select("id, project_id, version, label")
+            .single();
+          saved = calculation;
+          saveError = error;
+        }
+      }
       setSaving(false);
-      if (cErr) {
-        toast.error(cErr.message);
+      if (saveError || !saved) {
+        toast.error(saveError?.message ?? "Could not save");
         return;
       }
 
+      const savedCalculation = saved as {
+        id: string;
+        project_id: string;
+        version: number;
+        label: string;
+      };
+      const targetId = savedCalculation.project_id;
+      const nextVersion = Number(savedCalculation.version);
+      const label = savedCalculation.label;
+      setActiveProjectId(targetId);
       setLoadedVersion(nextVersion);
       await queryClient.invalidateQueries({ queryKey: ["project-versions", targetId] });
-      await logActivity(companyId, "saved_version", "calculation", targetId, {
+      await logActivity(companyId, "saved_version", "calculation", savedCalculation.id, {
         name: inputs.projectName,
         version: nextVersion,
         label,
       });
-      toast.success(`✨ Version ${nextVersion} saved successfully!`, {
+      toast.success(`Version ${nextVersion} saved successfully!`, {
         description: label,
         action: {
           label: "View Project",
@@ -800,9 +829,9 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
               variant="outline"
               size="sm"
               onClick={() => setIsLibraryManagerOpen(true)}
-              className="h-8 gap-1.5 text-xs font-semibold border-violet-300 dark:border-violet-800 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/50"
+              className="h-8 gap-1.5 text-xs font-semibold border-border dark:border-border text-foreground dark:text-muted-foreground hover:bg-muted dark:hover:bg-muted"
             >
-              <BookOpen className="size-3.5 text-violet-600" />
+              <BookOpen className="size-3.5 text-foreground" />
               <span className="hidden sm:inline">Feature Library & JSON</span>
               <span className="sm:hidden">Library</span>
             </Button>
@@ -850,7 +879,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                     isActive
                       ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/30"
                       : isDone
-                        ? "border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10"
+                        ? "border-border bg-muted hover:bg-muted"
                         : "border-border/70 hover:bg-muted/50",
                   )}
                 >
@@ -860,16 +889,20 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                       isActive
                         ? "bg-primary text-primary-foreground"
                         : isDone
-                          ? "bg-emerald-500 text-white"
+                          ? "bg-primary text-white"
                           : "bg-muted text-muted-foreground",
                     )}
                   >
-                    {isDone ? <Check className="size-3.5" /> : s.icon}
+                    {isDone ? (
+                      <Check className="size-3.5" aria-hidden="true" />
+                    ) : (
+                      <s.icon className="size-3.5" aria-hidden="true" />
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1">
                       <span className="text-xs font-bold truncate">{s.shortTitle}</span>
-                      {isDone && <CheckCircle2 className="size-3 text-emerald-500 shrink-0" />}
+                      {isDone && <CheckCircle2 className="size-3 text-foreground shrink-0" />}
                     </div>
                     <p className="text-[10px] text-muted-foreground truncate">{s.subtitle}</p>
                   </div>
@@ -881,7 +914,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
           {/* Stepper progress bar */}
           <div className="h-1 bg-muted rounded-full overflow-hidden mt-2.5">
             <div
-              className="h-full bg-gradient-to-r from-violet-500 via-primary to-emerald-500 transition-all duration-300 rounded-full"
+              className="h-full via-primary transition-all duration-300 rounded-full"
               style={{ width: `${(currentStep / 5) * 100}%` }}
             />
           </div>
@@ -894,9 +927,9 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
           {/* ════ STEP 1: Project & Blueprint ════ */}
           {currentStep === 1 && (
             <div className="space-y-5 animate-in fade-in-50 duration-200">
-              <div className="rounded-xl border bg-gradient-to-br from-violet-500/10 via-card to-background p-4">
+              <div className="rounded-xl border via-card to-background p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xl">📋</span>
+                  <span className="text-xl"></span>
                   <h2 className="font-display font-bold text-lg">
                     Step 1: Project Basics & Scope Blueprint
                   </h2>
@@ -932,6 +965,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
 
                     <div className="w-full sm:w-60">
                       <Input
+                        aria-label="Search blueprints"
                         value={presetSearch}
                         onChange={(e) => setPresetSearch(e.target.value)}
                         placeholder="Search blueprints (e.g. MERN, Shopify, MVP)..."
@@ -976,7 +1010,10 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                         >
                           <div className="flex items-start justify-between gap-2 mb-1.5">
                             <div className="flex items-center gap-2">
-                              <span className="text-lg">{p.icon}</span>
+                              <Sliders
+                                className="size-5 text-muted-foreground"
+                                aria-hidden="true"
+                              />
                               <h4 className="font-display font-semibold text-sm leading-tight">
                                 {p.title}
                               </h4>
@@ -1080,9 +1117,9 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
           {/* ════ STEP 2: Scope & Features (Drag & Drop) ════ */}
           {currentStep === 2 && (
             <div className="space-y-5 animate-in fade-in-50 duration-200">
-              <div className="rounded-xl border bg-gradient-to-br from-violet-500/10 via-card to-background p-4">
+              <div className="rounded-xl border via-card to-background p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xl">🎯</span>
+                  <span className="text-xl"></span>
                   <h2 className="font-display font-bold text-lg">
                     Step 2: Interactive Scope of Work Engine
                   </h2>
@@ -1102,12 +1139,17 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                 marginPct={inputs.marginPct}
                 salesCommissionPct={inputs.salesCommissionPct ?? 5}
                 contingencyPct={inputs.contingencyPct}
+                pricingMode={inputs.pricingMode}
+                markupPct={inputs.markupPct}
+                discountPct={inputs.discountPct}
+                roundingStep={inputs.roundingStep}
                 onApply={handleApplyScope}
               />
 
               <div className="flex items-center justify-between pt-4 border-t">
                 <Button variant="outline" onClick={prevStep} className="gap-1.5">
-                  <ArrowLeft className="size-4" /> Previous: Project Basics
+                  <ArrowLeft className="size-4" />
+                  Previous: Project Basics
                 </Button>
                 <Button size="lg" onClick={nextStep} className="gap-2 font-semibold shadow-sm">
                   <span>Next: Team Squad & Allocations</span>
@@ -1120,9 +1162,9 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
           {/* ════ STEP 3: Team & Allocations ════ */}
           {currentStep === 3 && (
             <div className="space-y-5 animate-in fade-in-50 duration-200">
-              <div className="rounded-xl border bg-gradient-to-br from-violet-500/10 via-card to-background p-4">
+              <div className="rounded-xl border via-card to-background p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xl">👥</span>
+                  <span className="text-xl"></span>
                   <h2 className="font-display font-bold text-lg">
                     Step 3: Team Squad & Phase Allocations
                   </h2>
@@ -1139,6 +1181,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                 employees={employees}
                 rateFor={rateFor}
                 currency={currency}
+                hoursPerDay={results.hoursPerDay}
+                hoursPerMonth={results.hoursPerMonth}
                 onAddPhase={handleAddPhase}
                 onAddPhaseTemplate={handleAddPhaseTemplate}
                 onRemovePhase={handleRemovePhase}
@@ -1150,7 +1194,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
 
               <div className="flex items-center justify-between pt-4 border-t">
                 <Button variant="outline" onClick={prevStep} className="gap-1.5">
-                  <ArrowLeft className="size-4" /> Previous: Scope & Features
+                  <ArrowLeft className="size-4" />
+                  Previous: Scope & Features
                 </Button>
                 <Button size="lg" onClick={nextStep} className="gap-2 font-semibold shadow-sm">
                   <span>Next: Retainer, Extras & Risk</span>
@@ -1163,9 +1208,9 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
           {/* ════ STEP 4: Retainer, Extras & Risk ════ */}
           {currentStep === 4 && (
             <div className="space-y-5 animate-in fade-in-50 duration-200">
-              <div className="rounded-xl border bg-gradient-to-br from-violet-500/10 via-card to-background p-4">
+              <div className="rounded-xl border via-card to-background p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xl">🛡️</span>
+                  <span className="text-xl"></span>
                   <h2 className="font-display font-bold text-lg">
                     Step 4: Retainer, Extras, Risk & Pricing
                   </h2>
@@ -1223,7 +1268,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                       Risk Buffer, Margin & Sales Commission
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      Set contingency %, target margin %, and sales commission (Ayesha Badar 5%).
+                      Set contingency %, target margin % and the sales commission on this deal.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -1243,7 +1288,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
 
               <div className="flex items-center justify-between pt-4 border-t">
                 <Button variant="outline" onClick={prevStep} className="gap-1.5">
-                  <ArrowLeft className="size-4" /> Previous: Team Squad
+                  <ArrowLeft className="size-4" />
+                  Previous: Team Squad
                 </Button>
                 <Button size="lg" onClick={nextStep} className="gap-2 font-semibold shadow-sm">
                   <span>Next: Executive Review & Proposal</span>
@@ -1256,10 +1302,10 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
           {/* ════ STEP 5: Executive Review & Proposal ════ */}
           {currentStep === 5 && (
             <div className="space-y-6 animate-in fade-in-50 duration-200">
-              <div className="rounded-xl border bg-gradient-to-br from-emerald-500/10 via-card to-background p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="rounded-xl border via-card to-background p-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xl">📊</span>
+                    <span className="text-xl"></span>
                     <h2 className="font-display font-bold text-lg">
                       Step 5: Executive Proposal & Rate Breakdown
                     </h2>
@@ -1286,13 +1332,14 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                     onClick={() => window.print()}
                     className="gap-1.5 h-8 text-xs"
                   >
-                    <Printer className="size-3.5" /> Print / PDF
+                    <Printer className="size-3.5" />
+                    Print / PDF
                   </Button>
                   <Button
                     size="sm"
                     onClick={() => save()}
                     disabled={saving || blocking}
-                    className="gap-1.5 h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-xs"
+                    className="gap-1.5 h-8 text-xs bg-primary hover:bg-primary text-white font-semibold shadow-xs"
                   >
                     <Save className="size-3.5" />
                     {saving
@@ -1315,7 +1362,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
 
               <div className="flex items-center justify-between pt-4 border-t">
                 <Button variant="outline" onClick={prevStep} className="gap-1.5">
-                  <ArrowLeft className="size-4" /> Previous: Retainer & Risk
+                  <ArrowLeft className="size-4" />
+                  Previous: Retainer & Risk
                 </Button>
                 <div className="flex items-center gap-2">
                   <Button
@@ -1331,7 +1379,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                     size="lg"
                     onClick={() => save()}
                     disabled={saving || blocking}
-                    className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm"
+                    className="gap-2 bg-primary hover:bg-primary text-white font-semibold shadow-sm"
                   >
                     <Save className="size-4" />
                     <span>
@@ -1364,6 +1412,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                 employees={employees}
                 rateFor={rateFor}
                 currency={currency}
+                hoursPerDay={results.hoursPerDay}
+                hoursPerMonth={results.hoursPerMonth}
                 onAddPhase={handleAddPhase}
                 onAddPhaseTemplate={handleAddPhaseTemplate}
                 onRemovePhase={handleRemovePhase}
@@ -1376,7 +1426,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
               <Accordion type="multiple" className="space-y-4">
                 <AccordionItem value="scope" className="rounded-md border bg-card px-4">
                   <AccordionTrigger className="font-display text-base">
-                    ✨ Interactive Scope & Features Engine (Database Drag & Drop)
+                    Interactive Scope & Features Engine (Database Drag & Drop)
                   </AccordionTrigger>
                   <AccordionContent className="pt-2 pb-4">
                     <ScopeEngine
@@ -1388,6 +1438,10 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                       marginPct={inputs.marginPct}
                       salesCommissionPct={inputs.salesCommissionPct ?? 5}
                       contingencyPct={inputs.contingencyPct}
+                      pricingMode={inputs.pricingMode}
+                      markupPct={inputs.markupPct}
+                      discountPct={inputs.discountPct}
+                      roundingStep={inputs.roundingStep}
                       onApply={handleApplyScope}
                     />
                   </AccordionContent>
@@ -1501,14 +1555,15 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                 <div className="hidden md:block">
                   <span className="text-muted-foreground text-[10px]">Total Effort</span>
                   <div className="font-mono font-semibold">
-                    {results.totalHours}h ({Math.round(results.totalHours / 8)}d)
+                    {results.totalHours}h (~{results.totalDays}d)
                   </div>
                 </div>
 
                 <div className="hidden lg:block">
                   <span className="text-muted-foreground text-[10px]">Net Return</span>
-                  <div className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                    {formatMoney(results.profit, currency)} ({inputs.marginPct}%)
+                  <div className="font-mono font-semibold text-foreground dark:text-muted-foreground">
+                    {formatMoney(results.profit, currency)} ({results.marginPct.toFixed(1)}% actual
+                    margin)
                   </div>
                 </div>
               </div>
@@ -1523,7 +1578,8 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                   onClick={prevStep}
                   className="h-8 gap-1 text-xs"
                 >
-                  <ArrowLeft className="size-3.5" /> Back
+                  <ArrowLeft className="size-3.5" />
+                  Back
                 </Button>
               )}
 
@@ -1541,7 +1597,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                   size="sm"
                   onClick={() => save()}
                   disabled={saving || blocking}
-                  className="h-8 gap-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                  className="h-8 gap-1.5 text-xs font-semibold bg-primary hover:bg-primary text-white shadow-xs"
                 >
                   <Save className="size-3.5" />
                   {saving
@@ -1559,7 +1615,7 @@ function Calculator({ workspace }: { workspace: WorkspaceData }) {
                   onClick={() => goToStep(5)}
                   className="h-8 text-xs text-muted-foreground hover:text-foreground hidden sm:inline-flex"
                 >
-                  Jump to Review ➔
+                  Jump to Review
                 </Button>
               )}
             </div>

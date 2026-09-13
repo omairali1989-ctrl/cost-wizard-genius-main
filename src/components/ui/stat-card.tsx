@@ -13,23 +13,23 @@ export interface StatCardProps {
   accent?: "default" | "green" | "blue" | "amber" | "red" | "purple";
 }
 
+// Only states that need attention carry colour; the rest read as plain cards.
 const ACCENT_STYLES: Record<NonNullable<StatCardProps["accent"]>, string> = {
   default: "border-border",
-  green:
-    "border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-500/5 to-transparent",
-  blue: "border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-500/5 to-transparent",
-  amber:
-    "border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-500/5 to-transparent",
-  red: "border-red-200 dark:border-red-800 bg-gradient-to-br from-red-500/5 to-transparent",
-  purple:
-    "border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-500/5 to-transparent",
+  green: "border-border",
+  blue: "border-border",
+  purple: "border-border",
+  amber: "border-warning",
+  red: "border-destructive",
 };
 
-const TREND_COLORS = {
-  up: "text-emerald-600 dark:text-emerald-400",
-  down: "text-red-500 dark:text-red-400",
+const TREND_STYLES = {
+  up: "text-foreground",
+  down: "text-destructive",
   flat: "text-muted-foreground",
 };
+
+const TREND_DESCRIPTION = { up: "Trending up", down: "Trending down", flat: "Flat" };
 
 export const StatCard = React.memo(function StatCard({
   label,
@@ -48,7 +48,10 @@ export const StatCard = React.memo(function StatCard({
             {label}
           </p>
           {icon && (
-            <div className="p-1.5 rounded-lg bg-background border shadow-2xs text-muted-foreground shrink-0">
+            <div
+              aria-hidden="true"
+              className="p-1.5 rounded-lg bg-background border shadow-2xs text-muted-foreground shrink-0"
+            >
               {icon}
             </div>
           )}
@@ -56,19 +59,28 @@ export const StatCard = React.memo(function StatCard({
         <p className="mt-1.5 font-display text-2xl font-bold tabular-nums">{value}</p>
         <div className="flex items-center gap-1.5 mt-1.5">
           {trend && (
-            <span className={cn("flex items-center gap-0.5 text-xs font-semibold", TREND_COLORS[trend])}>
+            <span
+              className={cn("flex items-center gap-0.5 text-xs font-semibold", TREND_STYLES[trend])}
+            >
               {trend === "up" ? (
-                <TrendingUp className="size-3" />
+                <TrendingUp className="size-3" aria-hidden="true" />
               ) : trend === "down" ? (
-                <TrendingDown className="size-3" />
+                <TrendingDown className="size-3" aria-hidden="true" />
               ) : (
-                <Minus className="size-3" />
+                <Minus className="size-3" aria-hidden="true" />
               )}
+              {/* Direction must not be conveyed by the icon and its colour alone. */}
+              <span className="sr-only">{TREND_DESCRIPTION[trend]}.</span>
               {trendLabel}
             </span>
           )}
           {hint && (
-            <p className={cn("text-xs text-muted-foreground", trend && "before:content-['·'] before:mr-1.5")}>
+            <p
+              className={cn(
+                "text-xs text-muted-foreground",
+                trend && "before:content-['·'] before:mr-1.5",
+              )}
+            >
               {hint}
             </p>
           )}

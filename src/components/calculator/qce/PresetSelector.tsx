@@ -18,14 +18,12 @@ export const PresetSelector = React.memo(function PresetSelector({
   onSelect,
   presets,
 }: PresetSelectorProps) {
-  const [selectedCategory, setSelectedCategory] =
-    React.useState<PresetCategory>("All");
+  const [selectedCategory, setSelectedCategory] = React.useState<PresetCategory>("All");
   const [searchQuery, setSearchQuery] = React.useState("");
 
   const filteredPresets = React.useMemo(() => {
     return presets.filter((p) => {
-      const matchCat =
-        selectedCategory === "All" || p.category === selectedCategory;
+      const matchCat = selectedCategory === "All" || p.category === selectedCategory;
       const matchSearch =
         !searchQuery ||
         p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -42,12 +40,14 @@ export const PresetSelector = React.memo(function PresetSelector({
         <div>
           <Label className="text-sm font-semibold">1. Choose Software Scope</Label>
           <p className="text-xs text-muted-foreground">
-            Select a software query template (MVP, Mobile, Web, CMS, Shopify, Creatives) or customize
+            Select a software query template (MVP, Mobile, Web, CMS, Shopify, Creatives) or
+            customize
           </p>
         </div>
         <div className="relative w-full sm:w-52">
           <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
+            aria-label="Search templates"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search templates..."
@@ -60,9 +60,7 @@ export const PresetSelector = React.memo(function PresetSelector({
       <div className="flex flex-wrap items-center gap-1.5 pb-1">
         {PRESET_CATEGORIES.map((cat) => {
           const count =
-            cat === "All"
-              ? presets.length
-              : presets.filter((p) => p.category === cat).length;
+            cat === "All" ? presets.length : presets.filter((p) => p.category === cat).length;
           const active = selectedCategory === cat;
           return (
             <button
@@ -118,13 +116,11 @@ export const PresetSelector = React.memo(function PresetSelector({
                   <CheckCircle2 className="size-4 text-primary shrink-0" />
                 ) : (
                   <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    ⏱️ {preset.defaultDurationValue} {preset.defaultDurationUnit}
+                    {preset.defaultDurationValue} {preset.defaultDurationUnit}
                   </span>
                 )}
               </div>
-              <span className="font-semibold text-sm leading-tight mt-0.5">
-                {preset.title}
-              </span>
+              <span className="font-semibold text-sm leading-tight mt-0.5">{preset.title}</span>
               <span className="text-xs text-muted-foreground mt-1 line-clamp-2 leading-relaxed">
                 {preset.description}
               </span>

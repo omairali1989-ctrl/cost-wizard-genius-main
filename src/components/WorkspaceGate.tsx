@@ -7,7 +7,9 @@ import { useWorkspace, type WorkspaceData } from "@/lib/workspace";
 export function WorkspaceGate({
   children,
 }: {
-  children: (workspace: WorkspaceData & { company: NonNullable<WorkspaceData["company"]> }) => ReactNode;
+  children: (
+    workspace: WorkspaceData & { company: NonNullable<WorkspaceData["company"]> },
+  ) => ReactNode;
 }) {
   const { data, isLoading } = useWorkspace();
   const navigate = useNavigate();

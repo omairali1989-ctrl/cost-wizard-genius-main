@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { pool, query, queryOne } from "../lib/mysql";
 import { convertCurrency } from "../lib/currency";
+import { DEFAULT_UTILIZATION_PCT, billableSharePct, numOr } from "../lib/pricing";
 
 const ALLOWED_TABLES = new Set([
   "companies",
@@ -28,10 +29,49 @@ const JSON_COLUMNS = new Set([
   "tags",
   "config",
 ]);
-const EDIT_ROLES = new Set(["admin", "manager", "management", "project_manager", "technical_lead", "calculator_user"]);
+const EDIT_ROLES = new Set([
+  "admin",
+  "manager",
+  "management",
+  "project_manager",
+  "technical_lead",
+  "calculator_user",
+]);
 const COST_ROLES = new Set(["admin", "finance"]);
 const FINANCE_ROLES = new Set(["admin", "finance", "management"]);
 const ADMIN_ONLY = new Set(["admin"]);
+const authAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function authRateLimitKey(request: Request, email: unknown) {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const address = forwarded || request.headers.get("x-real-ip") || "unknown";
+  return `${address}:${String(email || "")
+    .trim()
+    .toLowerCase()}`;
+}
+
+function authRateLimited(request: Request, email: unknown, max = 8, windowMs = 15 * 60 * 1000) {
+  const now = Date.now();
+  const key = authRateLimitKey(request, email);
+  const current = authAttempts.get(key);
+  if (!current || current.resetAt <= now) {
+    authAttempts.set(key, { count: 1, resetAt: now + windowMs });
+    return false;
+  }
+  current.count += 1;
+  if (authAttempts.size > 10_000) {
+    for (const [entryKey, entry] of authAttempts) {
+      if (entry.resetAt <= now) authAttempts.delete(entryKey);
+    }
+  }
+  return current.count > max;
+}
+
+function rateLimitResponse() {
+  const response = jsonResponse({ error: { message: "Too many attempts. Try again later." } }, 429);
+  response.headers.set("Retry-After", "900");
+  return response;
+}
 
 function jsonResponse(data: any, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -61,9 +101,11 @@ function parseJsonRow(row: any) {
   return copy;
 }
 
-async function getAuthUser(request: Request) {
+export async function getAuthUser(request: Request) {
   const authHeader = request.headers.get("authorization") || "";
-  const cookieToken = request.headers.get("cookie")?.match(/(?:^|;\s*)costcraft_session=([^;]+)/)?.[1];
+  const cookieToken = request.headers
+    .get("cookie")
+    ?.match(/(?:^|;\s*)costcraft_session=([^;]+)/)?.[1];
   const token = authHeader.replace(/^Bearer\s+/i, "").trim() || cookieToken || "";
   if (!token) return null;
 
@@ -71,13 +113,13 @@ async function getAuthUser(request: Request) {
 
   const session = await queryOne<{ user_id: string; expires_at: Date }>(
     "SELECT user_id, expires_at FROM sessions WHERE token = ? AND expires_at > NOW()",
-    [tokenHash]
+    [tokenHash],
   );
   if (!session) return null;
 
   const user = await queryOne<{ id: string; email: string; raw_user_meta_data: any }>(
     "SELECT id, email, raw_user_meta_data FROM auth_users WHERE id = ?",
-    [session.user_id]
+    [session.user_id],
   );
   if (!user) return null;
 
@@ -90,9 +132,17 @@ async function getAuthUser(request: Request) {
     }
   }
 
-  const profile = await queryOne<{ company_id: string | null }>("SELECT company_id FROM profiles WHERE id = ?", [user.id]);
+  const profile = await queryOne<{ company_id: string | null }>(
+    "SELECT company_id FROM profiles WHERE id = ?",
+    [user.id],
+  );
   const roles = profile?.company_id
-    ? (await query<{ role: string }>("SELECT role FROM user_roles WHERE user_id = ? AND company_id = ?", [user.id, profile.company_id])).map((r) => r.role)
+    ? (
+        await query<{ role: string }>(
+          "SELECT role FROM user_roles WHERE user_id = ? AND company_id = ?",
+          [user.id, profile.company_id],
+        )
+      ).map((r) => r.role)
     : [];
 
   return {
@@ -109,19 +159,102 @@ function hasRole(user: Awaited<ReturnType<typeof getAuthUser>>, allowed: Set<str
 }
 
 function dataScope(table: string, user: NonNullable<Awaited<ReturnType<typeof getAuthUser>>>) {
-  if (table === "profiles") return user.companyId ? { sql: "(`id` = ? OR `company_id` = ?)", params: [user.id, user.companyId] } : { sql: "`id` = ?", params: [user.id] };
-  if (table === "companies") return user.companyId ? { sql: "`id` = ?", params: [user.companyId] } : null;
-  if (table === "scope_features") return user.companyId ? { sql: "(`company_id` IS NULL OR `company_id` = ?)", params: [user.companyId] } : { sql: "`company_id` IS NULL", params: [] };
+  if (table === "profiles")
+    return user.companyId
+      ? { sql: "(`id` = ? OR `company_id` = ?)", params: [user.id, user.companyId] }
+      : { sql: "`id` = ?", params: [user.id] };
+  if (table === "companies")
+    return user.companyId ? { sql: "`id` = ?", params: [user.companyId] } : null;
+  if (table === "scope_features")
+    return user.companyId
+      ? { sql: "(`company_id` IS NULL OR `company_id` = ?)", params: [user.companyId] }
+      : { sql: "`company_id` IS NULL", params: [] };
   return user.companyId ? { sql: "`company_id` = ?", params: [user.companyId] } : null;
 }
 
-function canWriteTable(table: string, user: NonNullable<Awaited<ReturnType<typeof getAuthUser>>>, operation: "insert" | "update" | "delete") {
+function canWriteTable(
+  table: string,
+  user: NonNullable<Awaited<ReturnType<typeof getAuthUser>>>,
+  operation: "insert" | "update" | "delete",
+) {
   if (table === "profiles") return operation === "update";
   if (table === "companies") return operation === "update" && hasRole(user, ADMIN_ONLY);
   if (table === "user_roles" || table === "invitations") return hasRole(user, ADMIN_ONLY);
-  if (table === "employees" || table === "overheads" || table === "cost_policies" || table === "scope_features" || table === "project_presets") return hasRole(user, COST_ROLES);
+  if (
+    table === "employees" ||
+    table === "overheads" ||
+    table === "cost_policies" ||
+    table === "scope_features" ||
+    table === "project_presets"
+  )
+    return hasRole(user, COST_ROLES);
   if (table === "projects" || table === "calculations") return hasRole(user, EDIT_ROLES);
   return false;
+}
+
+function canReadTable(table: string, user: NonNullable<Awaited<ReturnType<typeof getAuthUser>>>) {
+  if (table === "employees" || table === "overheads" || table === "cost_policies") {
+    return hasRole(user, FINANCE_ROLES);
+  }
+  return true;
+}
+
+function validateWriteRecord(table: string, record: Record<string, any>) {
+  const ranges: Record<string, [number, number]> = {
+    annual_salary: [0, Number.MAX_SAFE_INTEGER],
+    monthly_salary: [0, Number.MAX_SAFE_INTEGER],
+    employer_cost_pct: [0, 200],
+    billable_target_pct: [0, 100],
+    monthly_amount: [0, Number.MAX_SAFE_INTEGER],
+    working_days_per_year: [1, 366],
+    hours_per_day: [1, 24],
+    default_utilization_pct: [1, 100],
+    default_contingency_pct: [0, 100],
+    default_margin_pct: [0, 95],
+    default_markup_pct: [0, 1000],
+    rounding_step: [0.000001, Number.MAX_SAFE_INTEGER],
+  };
+  for (const [column, [min, max]] of Object.entries(ranges)) {
+    if (!(column in record)) continue;
+    const value = Number(record[column]);
+    if (!Number.isFinite(value) || value < min || value > max) {
+      return `${column} must be between ${min} and ${max}.`;
+    }
+  }
+  if (
+    table === "cost_policies" &&
+    record["pricing_mode"] &&
+    !["margin", "markup"].includes(record["pricing_mode"])
+  ) {
+    return "pricing_mode must be margin or markup.";
+  }
+  if (
+    table === "overheads" &&
+    record["allocation_basis"] &&
+    !["per_employee", "flat"].includes(record["allocation_basis"])
+  ) {
+    return "allocation_basis must be per_employee or flat.";
+  }
+  for (const key of ["inputs", "results", "config", "effort", "details", "skills", "tags"]) {
+    if (key in record && record[key] !== null && typeof record[key] !== "object") {
+      return `${key} must be valid JSON.`;
+    }
+  }
+  if (
+    ["employees", "overheads", "projects"].includes(table) &&
+    "name" in record &&
+    !String(record["name"]).trim()
+  ) {
+    return "name cannot be empty.";
+  }
+  if (
+    table === "projects" &&
+    "status" in record &&
+    !["draft", "sent", "approved", "in_progress", "completed"].includes(String(record["status"]))
+  ) {
+    return "status must be draft, sent, approved, in_progress, or completed.";
+  }
+  return null;
 }
 
 function rejectUnauthenticated(user: Awaited<ReturnType<typeof getAuthUser>>) {
@@ -161,11 +294,16 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       if (!email || !password) {
         return jsonResponse({ error: { message: "Email and password are required." } }, 400);
       }
+      if (authRateLimited(request, email)) return rateLimitResponse();
 
-      const user = await queryOne<{ id: string; email: string; password_hash: string; raw_user_meta_data: any }>(
-        "SELECT id, email, password_hash, raw_user_meta_data FROM auth_users WHERE email = ?",
-        [email.trim().toLowerCase()]
-      );
+      const user = await queryOne<{
+        id: string;
+        email: string;
+        password_hash: string;
+        raw_user_meta_data: any;
+      }>("SELECT id, email, password_hash, raw_user_meta_data FROM auth_users WHERE email = ?", [
+        email.trim().toLowerCase(),
+      ]);
 
       if (!user) {
         return jsonResponse({ error: { message: "Invalid email or password." } }, 400);
@@ -178,7 +316,7 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
       const token = crypto.randomUUID() + "-" + crypto.randomBytes(16).toString("hex");
       const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
 
       await query("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)", [
         tokenHash,
@@ -212,7 +350,10 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         },
         error: null,
       });
-      response.headers.set("Set-Cookie", `costcraft_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${process.env["NODE_ENV"] === "production" ? "; Secure" : ""}`);
+      response.headers.set(
+        "Set-Cookie",
+        `costcraft_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${process.env["NODE_ENV"] === "production" ? "; Secure" : ""}`,
+      );
       return response;
     }
 
@@ -223,8 +364,11 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       if (!email || !password) {
         return jsonResponse({ error: { message: "Email and password are required." } }, 400);
       }
+      if (authRateLimited(request, email)) return rateLimitResponse();
 
-      const existing = await queryOne("SELECT id FROM auth_users WHERE email = ?", [email.trim().toLowerCase()]);
+      const existing = await queryOne("SELECT id FROM auth_users WHERE email = ?", [
+        email.trim().toLowerCase(),
+      ]);
       if (existing) {
         return jsonResponse({ error: { message: "User already registered." } }, 400);
       }
@@ -235,17 +379,18 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
       await query(
         "INSERT INTO auth_users (id, email, password_hash, raw_user_meta_data) VALUES (?, ?, ?, ?)",
-        [userId, email.trim().toLowerCase(), passwordHash, JSON.stringify(meta)]
+        [userId, email.trim().toLowerCase(), passwordHash, JSON.stringify(meta)],
       );
 
-      await query(
-        "INSERT INTO profiles (id, full_name, email) VALUES (?, ?, ?)",
-        [userId, meta.full_name || null, email.trim().toLowerCase()]
-      );
+      await query("INSERT INTO profiles (id, full_name, email) VALUES (?, ?, ?)", [
+        userId,
+        meta.full_name || null,
+        email.trim().toLowerCase(),
+      ]);
 
       const token = crypto.randomUUID() + "-" + crypto.randomBytes(16).toString("hex");
       const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
 
       await query("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)", [
         tokenHash,
@@ -270,7 +415,10 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         },
         error: null,
       });
-      response.headers.set("Set-Cookie", `costcraft_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${process.env["NODE_ENV"] === "production" ? "; Secure" : ""}`);
+      response.headers.set(
+        "Set-Cookie",
+        `costcraft_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${process.env["NODE_ENV"] === "production" ? "; Secure" : ""}`,
+      );
       return response;
     }
 
@@ -284,12 +432,20 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
     if (path === "/api/auth/logout" && request.method === "POST") {
       const authHeader = request.headers.get("authorization") || "";
-      const token = authHeader.replace(/^Bearer\s+/i, "").trim() || request.headers.get("cookie")?.match(/(?:^|;\s*)costcraft_session=([^;]+)/)?.[1] || "";
+      const token =
+        authHeader.replace(/^Bearer\s+/i, "").trim() ||
+        request.headers.get("cookie")?.match(/(?:^|;\s*)costcraft_session=([^;]+)/)?.[1] ||
+        "";
       if (token) {
-        await query("DELETE FROM sessions WHERE token = ?", [crypto.createHash("sha256").update(token).digest("hex")]);
+        await query("DELETE FROM sessions WHERE token = ?", [
+          crypto.createHash("sha256").update(token).digest("hex"),
+        ]);
       }
       const response = jsonResponse({ error: null });
-      response.headers.set("Set-Cookie", "costcraft_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+      response.headers.set(
+        "Set-Cookie",
+        "costcraft_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0",
+      );
       return response;
     }
 
@@ -304,7 +460,10 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       // Helper to get company_id of current user
       const getUserCompanyId = async () => {
         if (!currentUser) return null;
-        const prof = await queryOne<{ company_id: string }>("SELECT company_id FROM profiles WHERE id = ?", [currentUser.id]);
+        const prof = await queryOne<{ company_id: string }>(
+          "SELECT company_id FROM profiles WHERE id = ?",
+          [currentUser.id],
+        );
         return prof?.company_id || null;
       };
 
@@ -317,45 +476,60 @@ export async function handleApiRequest(request: Request): Promise<Response> {
           return jsonResponse({ data: [], error: null });
         }
 
-        const policy = await queryOne<any>("SELECT * FROM cost_policies WHERE company_id = ?", [companyId]);
-        const company = await queryOne<any>("SELECT currency FROM companies WHERE id = ?", [companyId]);
-        const overheadRows = await query<any>("SELECT monthly_amount, period FROM overheads WHERE company_id = ?", [companyId]);
-        const employees = await query<any>("SELECT * FROM employees WHERE company_id = ? ORDER BY name ASC", [companyId]);
+        const policy = await queryOne<any>("SELECT * FROM cost_policies WHERE company_id = ?", [
+          companyId,
+        ]);
+        const company = await queryOne<any>("SELECT currency FROM companies WHERE id = ?", [
+          companyId,
+        ]);
+        const overheadRows = await query<any>(
+          "SELECT monthly_amount, period FROM overheads WHERE company_id = ?",
+          [companyId],
+        );
+        const employees = await query<any>(
+          "SELECT * FROM employees WHERE company_id = ? ORDER BY name ASC",
+          [companyId],
+        );
 
         const totalMonthlyOverheads = overheadRows.reduce(
           (sum, o) => sum + Number(o.monthly_amount || 0) / (o.period === "yearly" ? 12 : 1),
           0,
         );
-        const activeCount = Math.max(employees.filter(e => Boolean(e.active)).length, 1);
+        const activeCount = Math.max(employees.filter((e) => Boolean(e.active)).length, 1);
         const annualPerEmployeeOverhead = (totalMonthlyOverheads * 12) / activeCount;
 
         const workingDays = Number(policy?.working_days_per_year || 240);
         const hoursPerDay = Number(policy?.hours_per_day || 8);
-        const defaultUtil = Number(policy?.default_utilization_pct || 75);
+        const defaultUtil = numOr(policy?.default_utilization_pct, DEFAULT_UTILIZATION_PCT);
 
         const results = employees.map((emp) => {
           let skills = emp.skills;
           if (typeof skills === "string") {
-            try { skills = JSON.parse(skills); } catch { skills = []; }
+            try {
+              skills = JSON.parse(skills);
+            } catch {
+              skills = [];
+            }
           }
           if (!Array.isArray(skills)) skills = [];
 
-          const targetPct = Number(emp.billable_target_pct);
-          const utilPct = targetPct > 0 ? targetPct : defaultUtil;
+          const utilPct = billableSharePct(emp, { default_utilization_pct: defaultUtil });
           const billableHours = workingDays * hoursPerDay * (utilPct / 100);
 
           const monthlySalary = Number(emp.monthly_salary || 0);
-          const annualSalary = monthlySalary > 0 ? monthlySalary * 12 : Number(emp.annual_salary || 0);
+          const annualSalary =
+            monthlySalary > 0 ? monthlySalary * 12 : Number(emp.annual_salary || 0);
           const baseSalary = convertCurrency(
             annualSalary,
             emp.salary_currency || company?.currency || "USD",
             company?.currency || "USD",
           );
-          const employerPct = Number(emp.employer_cost_pct || 20) / 100;
+          const employerPct = numOr(emp.employer_cost_pct, 0) / 100;
           const overheadPortion = Boolean(emp.active) ? annualPerEmployeeOverhead : 0;
-          const annualBase = (baseSalary * (1 + employerPct)) + overheadPortion;
+          const annualBase = baseSalary * (1 + employerPct) + overheadPortion;
 
-          const hourlyCost = billableHours > 0 ? Math.round((annualBase / billableHours) * 100) / 100 : 0;
+          const hourlyCost =
+            billableHours > 0 ? Math.round((annualBase / billableHours) * 100) / 100 : 0;
 
           return {
             id: emp.id,
@@ -372,11 +546,111 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         return jsonResponse({ data: results, error: null });
       }
 
+      if (rpcName === "company_policy") {
+        const unauthorized = rejectUnauthenticated(currentUser);
+        if (unauthorized) return unauthorized;
+        const companyId = await getUserCompanyId();
+        if (!companyId) return jsonResponse({ data: [], error: null });
+        const policy = await queryOne<any>(
+          `SELECT working_days_per_year, hours_per_day, default_utilization_pct,
+             default_contingency_pct, default_margin_pct, default_markup_pct,
+             pricing_mode, rounding_step
+           FROM cost_policies WHERE company_id = ? LIMIT 1`,
+          [companyId],
+        );
+        return jsonResponse({ data: policy ? [policy] : [], error: null });
+      }
+
+      if (rpcName === "save_calculation") {
+        const unauthorized = rejectUnauthenticated(currentUser);
+        if (unauthorized) return unauthorized;
+        if (!hasRole(currentUser, EDIT_ROLES)) {
+          return jsonResponse(
+            { error: { message: "You are not allowed to save estimates." } },
+            403,
+          );
+        }
+        const companyId = await getUserCompanyId();
+        if (!companyId)
+          return jsonResponse({ error: { message: "Workspace membership required." } }, 400);
+        const connection = await pool.getConnection();
+        try {
+          await connection.beginTransaction();
+          let projectId = body._project_id || null;
+          if (projectId) {
+            const [projectRows] = await connection.query(
+              "SELECT id FROM projects WHERE id = ? AND company_id = ? FOR UPDATE",
+              [projectId, companyId],
+            );
+            if (!(projectRows as any[]).length)
+              throw new Error("Project not found or not accessible");
+            await connection.query(
+              "UPDATE projects SET name = ?, client_name = ?, description = ? WHERE id = ? AND company_id = ?",
+              [
+                body._project_name || "Untitled Project",
+                body._client_name || null,
+                body._description || null,
+                projectId,
+                companyId,
+              ],
+            );
+          } else {
+            projectId = crypto.randomUUID();
+            await connection.query(
+              "INSERT INTO projects (id, company_id, name, client_name, description, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+              [
+                projectId,
+                companyId,
+                body._project_name || "New Estimate Project",
+                body._client_name || null,
+                body._description || null,
+                currentUser!.id,
+              ],
+            );
+          }
+          const [versionRows] = await connection.query(
+            "SELECT version FROM calculations WHERE project_id = ? ORDER BY version DESC LIMIT 1 FOR UPDATE",
+            [projectId],
+          );
+          const nextVersion = Number((versionRows as any[])[0]?.version || 0) + 1;
+          const calculationId = crypto.randomUUID();
+          const label =
+            String(body._label || `Version ${nextVersion}`).trim() || `Version ${nextVersion}`;
+          await connection.query(
+            `INSERT INTO calculations
+             (id, company_id, project_id, label, version, inputs, results, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              calculationId,
+              companyId,
+              projectId,
+              label,
+              nextVersion,
+              JSON.stringify(body._inputs || {}),
+              JSON.stringify(body._results || {}),
+              currentUser!.id,
+            ],
+          );
+          const [savedRows] = await connection.query(
+            "SELECT * FROM calculations WHERE id = ? AND company_id = ?",
+            [calculationId, companyId],
+          );
+          await connection.commit();
+          return jsonResponse({ data: parseJsonRow((savedRows as any[])[0]), error: null });
+        } catch (error) {
+          await connection.rollback();
+          throw error;
+        } finally {
+          connection.release();
+        }
+      }
+
       // 2. company_members
       if (rpcName === "company_members") {
         const unauthorized = rejectUnauthenticated(currentUser);
         if (unauthorized) return unauthorized;
-        if (!hasRole(currentUser, ADMIN_ONLY)) return jsonResponse({ error: { message: "Administrator access required" } }, 403);
+        if (!hasRole(currentUser, ADMIN_ONLY))
+          return jsonResponse({ error: { message: "Administrator access required" } }, 403);
         const companyId = await getUserCompanyId();
         if (!companyId) return jsonResponse({ data: [], error: null });
 
@@ -386,7 +660,7 @@ export async function handleApiRequest(request: Request): Promise<Response> {
            LEFT JOIN user_roles ur ON ur.user_id = p.id AND ur.company_id = p.company_id
            WHERE p.company_id = ?
            ORDER BY p.created_at ASC`,
-          [companyId]
+          [companyId],
         );
 
         const memberMap = new Map<string, any>();
@@ -414,22 +688,24 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         const { _name, _industry, _currency } = body;
         const newId = crypto.randomUUID();
 
-        await query(
-          "INSERT INTO companies (id, name, industry, currency) VALUES (?, ?, ?, ?)",
-          [newId, _name, _industry || null, _currency || "PKR"]
-        );
+        await query("INSERT INTO companies (id, name, industry, currency) VALUES (?, ?, ?, ?)", [
+          newId,
+          _name,
+          _industry || null,
+          _currency || "PKR",
+        ]);
 
         await query("UPDATE profiles SET company_id = ? WHERE id = ?", [newId, currentUser.id]);
         await query(
           "INSERT INTO user_roles (id, user_id, company_id, role) VALUES (?, ?, ?, 'admin')",
-          [crypto.randomUUID(), currentUser.id, newId]
+          [crypto.randomUUID(), currentUser.id, newId],
         );
 
         await query(
           `INSERT INTO cost_policies 
            (id, company_id, working_days_per_year, hours_per_day, default_utilization_pct, default_contingency_pct, default_margin_pct, pricing_mode, default_markup_pct, rounding_step)
            VALUES (?, ?, 240, 8, 75, 10, 25, 'margin', 35, 100)`,
-          [crypto.randomUUID(), newId]
+          [crypto.randomUUID(), newId],
         );
 
         await query(
@@ -437,11 +713,7 @@ export async function handleApiRequest(request: Request): Promise<Response> {
            (?, ?, 'Office & facilities', 'facilities', 0, 'per_employee'),
            (?, ?, 'Software & tooling', 'software', 0, 'per_employee'),
            (?, ?, 'Admin & support staff', 'admin', 0, 'per_employee')`,
-          [
-            crypto.randomUUID(), newId,
-            crypto.randomUUID(), newId,
-            crypto.randomUUID(), newId,
-          ]
+          [crypto.randomUUID(), newId, crypto.randomUUID(), newId, crypto.randomUUID(), newId],
         );
 
         return jsonResponse({ data: newId, error: null });
@@ -451,14 +723,21 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       if (rpcName === "set_member_role") {
         const unauthorized = rejectUnauthenticated(currentUser);
         if (unauthorized) return unauthorized;
-        if (!hasRole(currentUser, ADMIN_ONLY)) return jsonResponse({ error: { message: "Administrator access required" } }, 403);
+        if (!hasRole(currentUser, ADMIN_ONLY))
+          return jsonResponse({ error: { message: "Administrator access required" } }, 403);
         const companyId = await getUserCompanyId();
         const { _user_id, _role } = body;
         if (!companyId) return jsonResponse({ error: { message: "No company" } }, 400);
 
-        await query("DELETE FROM user_roles WHERE user_id = ? AND company_id = ?", [_user_id, companyId]);
+        await query("DELETE FROM user_roles WHERE user_id = ? AND company_id = ?", [
+          _user_id,
+          companyId,
+        ]);
         await query("INSERT INTO user_roles (id, user_id, company_id, role) VALUES (?, ?, ?, ?)", [
-          crypto.randomUUID(), _user_id, companyId, _role
+          crypto.randomUUID(),
+          _user_id,
+          companyId,
+          _role,
         ]);
         return jsonResponse({ data: null, error: null });
       }
@@ -467,12 +746,16 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       if (rpcName === "remove_member") {
         const unauthorized = rejectUnauthenticated(currentUser);
         if (unauthorized) return unauthorized;
-        if (!hasRole(currentUser, ADMIN_ONLY)) return jsonResponse({ error: { message: "Administrator access required" } }, 403);
+        if (!hasRole(currentUser, ADMIN_ONLY))
+          return jsonResponse({ error: { message: "Administrator access required" } }, 403);
         const companyId = await getUserCompanyId();
         const { _user_id } = body;
         if (!companyId) return jsonResponse({ error: { message: "No company" } }, 400);
 
-        await query("DELETE FROM user_roles WHERE user_id = ? AND company_id = ?", [_user_id, companyId]);
+        await query("DELETE FROM user_roles WHERE user_id = ? AND company_id = ?", [
+          _user_id,
+          companyId,
+        ]);
         await query("UPDATE profiles SET company_id = NULL WHERE id = ?", [_user_id]);
         return jsonResponse({ data: null, error: null });
       }
@@ -487,12 +770,20 @@ export async function handleApiRequest(request: Request): Promise<Response> {
            FROM invitations i
            JOIN companies c ON c.id = i.company_id
            WHERE i.token = ?`,
-          [_token]
+          [_token],
         );
         if (!inv) return jsonResponse({ error: { message: "Invitation not found" } }, 404);
         const expired = new Date() > new Date(inv.expires_at);
         return jsonResponse({
-          data: [{ email: inv.email, role: inv.role, company_name: inv.company_name, status: inv.status, expired }],
+          data: [
+            {
+              email: inv.email,
+              role: inv.role,
+              company_name: inv.company_name,
+              status: inv.status,
+              expired,
+            },
+          ],
           error: null,
         });
       }
@@ -509,13 +800,23 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         if (String(inv.email).toLowerCase() !== currentUser.email.toLowerCase()) {
           return jsonResponse({ error: { message: "Invitation email does not match" } }, 403);
         }
-        if (currentUser.companyId) return jsonResponse({ error: { message: "You already belong to a company" } }, 400);
+        if (currentUser.companyId)
+          return jsonResponse({ error: { message: "You already belong to a company" } }, 400);
 
-        await query("UPDATE profiles SET company_id = ? WHERE id = ?", [inv.company_id, currentUser.id]);
-        await query("INSERT INTO user_roles (id, user_id, company_id, role) VALUES (?, ?, ?, ?)", [
-          crypto.randomUUID(), currentUser.id, inv.company_id, inv.role
+        await query("UPDATE profiles SET company_id = ? WHERE id = ?", [
+          inv.company_id,
+          currentUser.id,
         ]);
-        await query("UPDATE invitations SET status = 'accepted', responded_at = NOW() WHERE id = ?", [inv.id]);
+        await query("INSERT INTO user_roles (id, user_id, company_id, role) VALUES (?, ?, ?, ?)", [
+          crypto.randomUUID(),
+          currentUser.id,
+          inv.company_id,
+          inv.role,
+        ]);
+        await query(
+          "UPDATE invitations SET status = 'accepted', responded_at = NOW() WHERE id = ?",
+          [inv.id],
+        );
 
         return jsonResponse({ data: inv.company_id, error: null });
       }
@@ -525,11 +826,20 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         const unauthorized = rejectUnauthenticated(currentUser);
         if (unauthorized) return unauthorized;
         const { _token } = body;
-        const inv = await queryOne<any>("SELECT email, status FROM invitations WHERE token = ?", [_token]);
-        if (!inv || inv.status !== "pending" || String(inv.email).toLowerCase() !== currentUser!.email.toLowerCase()) {
+        const inv = await queryOne<any>("SELECT email, status FROM invitations WHERE token = ?", [
+          _token,
+        ]);
+        if (
+          !inv ||
+          inv.status !== "pending" ||
+          String(inv.email).toLowerCase() !== currentUser!.email.toLowerCase()
+        ) {
           return jsonResponse({ error: { message: "Invitation is not valid for this user" } }, 403);
         }
-        await query("UPDATE invitations SET status = 'declined', responded_at = NOW() WHERE token = ? AND status = 'pending'", [_token]);
+        await query(
+          "UPDATE invitations SET status = 'declined', responded_at = NOW() WHERE token = ? AND status = 'pending'",
+          [_token],
+        );
         return jsonResponse({ data: null, error: null });
       }
 
@@ -544,17 +854,31 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       const unauthorized = rejectUnauthenticated(currentUser);
       if (unauthorized) return unauthorized;
       const body = await request.json();
-      const { table, select, filters = [], order = [], limit, single = false, maybeSingle = false } = body;
+      const {
+        table,
+        select,
+        filters = [],
+        order = [],
+        limit,
+        single = false,
+        maybeSingle = false,
+      } = body;
 
       if (!ALLOWED_TABLES.has(table)) {
         return jsonResponse({ error: { message: `Table ${table} is not accessible.` } }, 400);
+      }
+      if (!canReadTable(table, currentUser!)) {
+        return jsonResponse({ error: { message: "You are not allowed to read this data." } }, 403);
       }
       const scope = dataScope(table, currentUser!);
       if (!scope) return jsonResponse({ data: [], error: null });
 
       let selectClause = "*";
       if (typeof select === "string" && select.trim() !== "*") {
-        const parts = select.split(",").map((s: string) => s.trim()).filter(Boolean);
+        const parts = select
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean);
         const safeParts = parts.filter((s: string) => /^[a-zA-Z0-9_]+$/.test(s));
         if (safeParts.length > 0) {
           selectClause = safeParts.map((s: string) => `\`${s}\``).join(", ");
@@ -574,6 +898,9 @@ export async function handleApiRequest(request: Request): Promise<Response> {
             params.push(f.value);
           } else if (f.op === "neq") {
             whereClauses.push(`\`${f.column}\` != ?`);
+            params.push(f.value);
+          } else if (f.op === "lt") {
+            whereClauses.push(`\`${f.column}\` < ?`);
             params.push(f.value);
           } else if (f.op === "is" && f.value === null) {
             whereClauses.push(`\`${f.column}\` IS NULL`);
@@ -616,16 +943,23 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       // Handle Supabase-like relational joins
       if (typeof select === "string") {
         if (table === "calculations" && select.includes("projects")) {
-          const projectIds = Array.from(new Set(parsedRows.map((r) => r.project_id).filter(Boolean)));
+          const projectIds = Array.from(
+            new Set(parsedRows.map((r) => r.project_id).filter(Boolean)),
+          );
           if (projectIds.length > 0) {
             const placeholders = projectIds.map(() => "?").join(", ");
             const projectRows = await query<any>(
-              `SELECT id, name, client_name FROM projects WHERE id IN (${placeholders})`,
-              projectIds
+              `SELECT id, name, client_name, status FROM projects WHERE id IN (${placeholders})`,
+              projectIds,
             );
-            const pMap = new Map(projectRows.map((p) => [p.id, { name: p.name, client_name: p.client_name }]));
+            const pMap = new Map(
+              projectRows.map((p) => [
+                p.id,
+                { id: p.id, name: p.name, client_name: p.client_name, status: p.status },
+              ]),
+            );
             for (const r of parsedRows) {
-              r.projects = r.project_id ? (pMap.get(r.project_id) || null) : null;
+              r.projects = r.project_id ? pMap.get(r.project_id) || null : null;
             }
           } else {
             for (const r of parsedRows) {
@@ -638,7 +972,7 @@ export async function handleApiRequest(request: Request): Promise<Response> {
             const placeholders = projectIds.map(() => "?").join(", ");
             const calcRows = await query<any>(
               `SELECT id, project_id, version, results FROM calculations WHERE project_id IN (${placeholders})`,
-              projectIds
+              projectIds,
             );
             const cMap = new Map<string, any[]>();
             for (const c of calcRows) {
@@ -680,15 +1014,24 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       if (!ALLOWED_TABLES.has(table)) {
         return jsonResponse({ error: { message: `Table ${table} is not accessible.` } }, 400);
       }
-      if (!canWriteTable(table, currentUser!, "insert")) return jsonResponse({ error: { message: "You are not allowed to insert this data." } }, 403);
+      if (!canWriteTable(table, currentUser!, "insert"))
+        return jsonResponse(
+          { error: { message: "You are not allowed to insert this data." } },
+          403,
+        );
 
       const records = Array.isArray(data) ? data : [data];
       const insertedRows: any[] = [];
 
       for (const rec of records) {
         const insertRecord = { ...rec };
+        const validationError = validateWriteRecord(table, insertRecord);
+        if (validationError) return jsonResponse({ error: { message: validationError } }, 400);
         const scope = dataScope(table, currentUser!);
-        if (!scope || ("company_id" in insertRecord && insertRecord.company_id !== currentUser!.companyId)) {
+        if (
+          !scope ||
+          ("company_id" in insertRecord && insertRecord.company_id !== currentUser!.companyId)
+        ) {
           return jsonResponse({ error: { message: "Data must belong to your workspace." } }, 403);
         }
         if (table !== "profiles" && !insertRecord.company_id) {
@@ -714,12 +1057,74 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         const sql = `INSERT INTO \`${table}\` (${keys.join(", ")}) VALUES (${placeholders})`;
 
         await query(sql, values);
-        const inserted = await queryOne(`SELECT * FROM \`${table}\` WHERE id = ? AND ${scope.sql}`, [insertRecord.id, ...scope.params]);
+        const inserted = await queryOne(
+          `SELECT * FROM \`${table}\` WHERE id = ? AND ${scope.sql}`,
+          [insertRecord.id, ...scope.params],
+        );
         insertedRows.push(parseJsonRow(inserted));
       }
 
       return jsonResponse({
         data: Array.isArray(data) ? insertedRows : insertedRows[0],
+        error: null,
+      });
+    }
+
+    if (path === "/api/data/upsert" && request.method === "POST") {
+      const currentUser = await getAuthUser(request);
+      const unauthorized = rejectUnauthenticated(currentUser);
+      if (unauthorized) return unauthorized;
+      const body = await request.json();
+      const { table, data } = body;
+      if (!ALLOWED_TABLES.has(table))
+        return jsonResponse({ error: { message: `Table ${table} is not accessible.` } }, 400);
+      if (!canWriteTable(table, currentUser!, "insert"))
+        return jsonResponse({ error: { message: "You are not allowed to write this data." } }, 403);
+      const records = Array.isArray(data) ? data : [data];
+      const upsertedRows: any[] = [];
+      for (const rec of records) {
+        const upsertRecord = { ...rec };
+        const validationError = validateWriteRecord(table, upsertRecord);
+        if (validationError) return jsonResponse({ error: { message: validationError } }, 400);
+        const scope = dataScope(table, currentUser!);
+        if (
+          !scope ||
+          ("company_id" in upsertRecord && upsertRecord.company_id !== currentUser!.companyId)
+        ) {
+          return jsonResponse({ error: { message: "Data must belong to your workspace." } }, 403);
+        }
+        if (table !== "profiles" && !upsertRecord.company_id) {
+          return jsonResponse({ error: { message: "A workspace is required." } }, 400);
+        }
+        if (!upsertRecord.id) upsertRecord.id = crypto.randomUUID();
+        const keys: string[] = [];
+        const values: any[] = [];
+        for (const [key, val] of Object.entries(upsertRecord)) {
+          if (!/^[a-zA-Z0-9_]+$/.test(key)) continue;
+          keys.push(`\`${key}\``);
+          values.push(
+            JSON_COLUMNS.has(key) && typeof val === "object" && val !== null
+              ? JSON.stringify(val)
+              : val,
+          );
+        }
+        const updateKeys = keys.filter((key) => !["`id`", "`company_id`"].includes(key));
+        const updateClause =
+          updateKeys.length > 0
+            ? ` ON DUPLICATE KEY UPDATE ${updateKeys.map((key) => `${key} = VALUES(${key})`).join(", ")}`
+            : "";
+        await query(
+          `INSERT INTO \`${table}\` (${keys.join(", ")}) VALUES (${keys.map(() => "?").join(", ")})${updateClause}`,
+          values,
+        );
+        const row = await queryOne(`SELECT * FROM \`${table}\` WHERE id = ? AND ${scope.sql}`, [
+          upsertRecord.id,
+          ...scope.params,
+        ]);
+        upsertedRows.push(parseJsonRow(row));
+      }
+      return jsonResponse({
+        data: Array.isArray(data) ? upsertedRows : upsertedRows[0],
         error: null,
       });
     }
@@ -734,9 +1139,19 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       if (!ALLOWED_TABLES.has(table)) {
         return jsonResponse({ error: { message: `Table ${table} is not accessible.` } }, 400);
       }
-      if (!canWriteTable(table, currentUser!, "update")) return jsonResponse({ error: { message: "You are not allowed to update this data." } }, 403);
-      if (data?.company_id && data.company_id !== currentUser!.companyId) return jsonResponse({ error: { message: "Data must remain in your workspace." } }, 403);
-      if (table === "profiles" && !filters.some((f: any) => f.column === "id" && f.op === "eq" && f.value === currentUser!.id)) {
+      if (!canWriteTable(table, currentUser!, "update"))
+        return jsonResponse(
+          { error: { message: "You are not allowed to update this data." } },
+          403,
+        );
+      if (data?.company_id && data.company_id !== currentUser!.companyId)
+        return jsonResponse({ error: { message: "Data must remain in your workspace." } }, 403);
+      const validationError = validateWriteRecord(table, data || {});
+      if (validationError) return jsonResponse({ error: { message: validationError } }, 400);
+      if (
+        table === "profiles" &&
+        !filters.some((f: any) => f.column === "id" && f.op === "eq" && f.value === currentUser!.id)
+      ) {
         return jsonResponse({ error: { message: "You may only update your own profile." } }, 403);
       }
 
@@ -760,7 +1175,8 @@ export async function handleApiRequest(request: Request): Promise<Response> {
 
       let sql = `UPDATE \`${table}\` SET ${setClauses.join(", ")}`;
       const scope = dataScope(table, currentUser!);
-      if (!scope) return jsonResponse({ error: { message: "Workspace membership required." } }, 403);
+      if (!scope)
+        return jsonResponse({ error: { message: "Workspace membership required." } }, 403);
       sql += ` WHERE ${scope.sql}`;
       const setParams = [...params];
 
@@ -778,7 +1194,13 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         }
       }
 
-      params.splice(0, params.length, ...setParams, ...scope.params, ...params.slice(setParams.length));
+      params.splice(
+        0,
+        params.length,
+        ...setParams,
+        ...scope.params,
+        ...params.slice(setParams.length),
+      );
 
       await query(sql, params);
 
@@ -786,7 +1208,10 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       const idFilter = filters.find((f: any) => f.column === "id" && f.op === "eq");
       let updatedRow = null;
       if (idFilter) {
-        updatedRow = await queryOne(`SELECT * FROM \`${table}\` WHERE id = ? AND ${scope.sql}`, [idFilter.value, ...scope.params]);
+        updatedRow = await queryOne(`SELECT * FROM \`${table}\` WHERE id = ? AND ${scope.sql}`, [
+          idFilter.value,
+          ...scope.params,
+        ]);
       }
 
       return jsonResponse({ data: parseJsonRow(updatedRow), error: null });
@@ -802,11 +1227,16 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       if (!ALLOWED_TABLES.has(table)) {
         return jsonResponse({ error: { message: `Table ${table} is not accessible.` } }, 400);
       }
-      if (!canWriteTable(table, currentUser!, "delete")) return jsonResponse({ error: { message: "You are not allowed to delete this data." } }, 403);
+      if (!canWriteTable(table, currentUser!, "delete"))
+        return jsonResponse(
+          { error: { message: "You are not allowed to delete this data." } },
+          403,
+        );
 
       let sql = `DELETE FROM \`${table}\``;
       const scope = dataScope(table, currentUser!);
-      if (!scope) return jsonResponse({ error: { message: "Workspace membership required." } }, 403);
+      if (!scope)
+        return jsonResponse({ error: { message: "Workspace membership required." } }, 403);
       const params: any[] = [...scope.params];
       sql += ` WHERE ${scope.sql}`;
 
@@ -832,6 +1262,9 @@ export async function handleApiRequest(request: Request): Promise<Response> {
   } catch (err: any) {
     const requestId = crypto.randomUUID();
     console.error(`API error [${requestId}]:`, err);
-    return jsonResponse({ error: { message: `Internal server error. Reference: ${requestId}` } }, 500);
+    return jsonResponse(
+      { error: { message: `Internal server error. Reference: ${requestId}` } },
+      500,
+    );
   }
 }

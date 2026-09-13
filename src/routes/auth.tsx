@@ -78,7 +78,10 @@ function AuthPage() {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: { emailRedirectTo: `${window.location.origin}/auth`, data: { full_name: fullName.trim() } },
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth`,
+        data: { full_name: fullName.trim() },
+      },
     });
     setBusy(false);
     if (error) {
@@ -270,10 +273,7 @@ function AuthPage() {
                 </div>
               </form>
             ) : (
-              <Tabs
-                value={view}
-                onValueChange={(value) => setView(value as "signin" | "signup")}
-              >
+              <Tabs value={view} onValueChange={(value) => setView(value as "signin" | "signup")}>
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="signin">Sign in</TabsTrigger>
                   <TabsTrigger value="signup">Create account</TabsTrigger>

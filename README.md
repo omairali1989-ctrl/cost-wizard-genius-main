@@ -211,7 +211,7 @@ The application expects the Supabase Data API to expose the `public` tables. RLS
 
 ## Email templates
 
-Branded Supabase email templates are kept in `supabase/email-templates/`. Apply `confirmation.html` to the Confirm sign up template and `recovery.html` to the Reset password template in Supabase Authentication > Emails. The confirmation template uses `{{ .Token }}` so registrations can be completed with a six-digit OTP.
+Branded authentication email templates are kept in `supabase/email-templates/`. Apply `confirmation.html`, `invite.html`, and `recovery.html` to the matching authentication email templates in your authentication email settings. The confirmation template uses `{{ .Token }}` so registrations can be completed with a six-digit OTP.
 
 ## Development
 
@@ -248,9 +248,9 @@ Before deployment:
 4. Verify email sign-in, OTP registration, password recovery, workspace creation, and invitation acceptance.
 5. Add an employee with a monthly salary and non-company salary currency.
 6. Add monthly and yearly overheads and verify normalized totals.
-7. Import a custom preset from Settings and verify it appears in both calculators.
+7. Import a custom preset from Settings and verify it appears in both calculators. The active workspace is passed to both preset loaders.
 8. Create a project, save a calculation version, compare versions, and inspect the activity trail.
-9. Run `npm run build` and the pricing verification scripts.
+9. Run `npm run typecheck`, `npm test`, and `npm run build`.
 
 ## Security Notes
 

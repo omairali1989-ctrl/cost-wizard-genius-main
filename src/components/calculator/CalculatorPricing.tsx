@@ -79,7 +79,7 @@ export const CalculatorPricing = React.memo(function CalculatorPricing({
           onChange={(e) => onChange({ discountPct: Number(e.target.value) })}
         />
       </Field>
-      <Field label="Sales Commission %" hint="Allocated for sales executive (e.g. Ayesha)">
+      <Field label="Sales Commission %" hint="Paid to the sales owner of this deal">
         <Input
           type="number"
           placeholder="5"
@@ -89,11 +89,7 @@ export const CalculatorPricing = React.memo(function CalculatorPricing({
       </Field>
       <div className="sm:col-span-2">
         <Field label="Notes for the proposal">
-          <Textarea
-            rows={3}
-            value={notes}
-            onChange={(e) => onChange({ notes: e.target.value })}
-          />
+          <Textarea rows={3} value={notes} onChange={(e) => onChange({ notes: e.target.value })} />
         </Field>
       </div>
     </div>

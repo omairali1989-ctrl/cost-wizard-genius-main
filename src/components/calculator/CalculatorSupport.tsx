@@ -17,10 +17,7 @@ export const CalculatorSupport = React.memo(function CalculatorSupport({
   return (
     <div className="rounded-md border p-3">
       <div className="mb-3 flex items-center gap-3">
-        <Switch
-          checked={support.enabled}
-          onCheckedChange={(v) => onChange({ enabled: v })}
-        />
+        <Switch checked={support.enabled} onCheckedChange={(v) => onChange({ enabled: v })} />
         <Label>Include ongoing support</Label>
       </div>
       {support.enabled && (

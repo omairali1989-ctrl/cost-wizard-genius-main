@@ -24,16 +24,10 @@ export const CalculatorBasics = React.memo(function CalculatorBasics({
       </CardHeader>
       <CardContent className="grid gap-4 sm:grid-cols-2">
         <Field label="Project name">
-          <Input
-            value={projectName}
-            onChange={(e) => onChange({ projectName: e.target.value })}
-          />
+          <Input value={projectName} onChange={(e) => onChange({ projectName: e.target.value })} />
         </Field>
         <Field label="Client">
-          <Input
-            value={clientName}
-            onChange={(e) => onChange({ clientName: e.target.value })}
-          />
+          <Input value={clientName} onChange={(e) => onChange({ clientName: e.target.value })} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="What is being built? (optional)">

@@ -41,9 +41,7 @@ function InvitePage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSignedIn(!!data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) =>
-      setSignedIn(!!session),
-    );
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => setSignedIn(!!session));
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -61,7 +59,10 @@ function InvitePage() {
     setBusy(true);
     const { error } = await supabase.rpc("accept_invitation", { _token: token });
     setBusy(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     await queryClient.invalidateQueries();
     toast.success("Welcome aboard");
     navigate({ to: "/dashboard", replace: true });
@@ -71,7 +72,10 @@ function InvitePage() {
     setBusy(true);
     const { error } = await supabase.rpc("decline_invitation", { _token: token });
     setBusy(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     toast.success("Invitation declined");
     navigate({ to: "/", replace: true });
   };

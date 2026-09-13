@@ -41,11 +41,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { formatMoney } from "@/lib/pricing";
+import { calculate, formatMoney } from "@/lib/pricing";
+import {
+  INCLUSION_META,
+  computeEffort,
+  type EffortBreakdown,
+  type FeatureLike,
+  type ScopeInclusion,
+} from "@/lib/estimation";
+import type { AiFactorMap } from "@/lib/ai-productivity";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useScopeFeatures, type ScopeFeatureRecord, type TeamRate } from "@/lib/workspace";
+import {
+  useAiFactors,
+  useScopeFeatures,
+  type ScopeFeatureRecord,
+  type TeamRate,
+} from "@/lib/workspace";
 import {
   FEATURE_LIBRARY,
   CATEGORY_META,
@@ -59,6 +72,7 @@ import {
   type RoleKey,
 } from "./featureLibrary";
 import type { CalculationInputs } from "@/lib/pricing";
+import { CategoryGlyph } from "./CategoryGlyph";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type TargetPhase = "design" | "dev" | "qa" | "auto";
@@ -68,6 +82,8 @@ interface SelectedFeature {
   complexity: Complexity;
   quantity: number;
   targetPhase?: TargetPhase | undefined;
+  /** Included work is priced; everything else is stated on the scope but not charged. */
+  inclusion?: ScopeInclusion;
 }
 
 interface EffortSummary {
@@ -85,6 +101,11 @@ interface ScopeEngineProps {
   marginPct: number;
   salesCommissionPct: number;
   contingencyPct: number;
+  /** Full pricing context so this panel quotes the same number the calculator does. */
+  pricingMode: "margin" | "markup";
+  markupPct: number;
+  discountPct: number;
+  roundingStep: number;
   onApply: (inputs: Partial<CalculationInputs>) => void;
 }
 
@@ -106,40 +127,76 @@ function matchEmployeeForRole(role: RoleKey, employees: TeamRate[]): TeamRate | 
 }
 
 // ─── Calculate total effort from selections ───────────────────────────────────
+// Effort now runs through the shared estimation engine so scope classification and
+// the AI productivity matrix apply here exactly as they do everywhere else.
 function calcEffort(
   selections: SelectedFeature[],
   library: FeatureDefinition[],
   employees: TeamRate[],
-): { byRole: EffortSummary[]; totalHours: number; totalCost: number } {
-  const roleHours: Record<RoleKey, number> = {
-    designer: 0,
-    frontend: 0,
-    backend: 0,
-    mobile: 0,
-    pm: 0,
-    qa: 0,
-  };
+  aiFactors: AiFactorMap | undefined,
+  aiEnabled: boolean,
+): {
+  byRole: EffortSummary[];
+  totalHours: number;
+  totalCost: number;
+  unmatchedRoles: RoleKey[];
+  baseHours: number;
+  hoursSavedByAi: number;
+  effectiveAiReductionPct: number;
+  breakdown: EffortBreakdown;
+} {
+  // A role with no matching person must not be priced at zero — that would let its
+  // hours into the quote for free. Fall back to the team's average rate and say so.
+  const billable = employees.filter((e) => e.active && e.hourly_cost > 0);
+  const avgRate = billable.length
+    ? billable.reduce((s, e) => s + e.hourly_cost, 0) / billable.length
+    : 0;
 
-  for (const sel of selections) {
-    const feat = library.find((f) => f.id === sel.featureId);
-    if (!feat) continue;
-    const effort = feat.effort[sel.complexity];
-    if (!effort) continue;
-    for (const rk of ROLE_KEYS) {
-      roleHours[rk] += (effort[rk] ?? 0) * sel.quantity;
-    }
+  const unmatchedRoles: RoleKey[] = [];
+  const roleRates: Partial<Record<RoleKey, number>> = {};
+  for (const rk of ROLE_KEYS) {
+    const emp = matchEmployeeForRole(rk, employees);
+    if (!emp) unmatchedRoles.push(rk);
+    roleRates[rk] = emp?.hourly_cost ?? avgRate;
   }
 
-  const byRole: EffortSummary[] = ROLE_KEYS.map((rk) => {
-    const emp = matchEmployeeForRole(rk, employees);
-    const cost = (emp?.hourly_cost ?? 0) * roleHours[rk];
-    return { role: rk, hours: roleHours[rk], cost };
+  const features: FeatureLike[] = library.map((f) => ({
+    id: f.id,
+    label: f.label,
+    effort: f.effort as FeatureLike["effort"],
+  }));
+
+  const breakdown = computeEffort({
+    selections: selections.map((s) => ({
+      featureId: s.featureId,
+      complexity: s.complexity,
+      quantity: s.quantity,
+      inclusion: s.inclusion ?? "included",
+    })),
+    features,
+    roleRates,
+    aiFactorOverrides: aiFactors ?? null,
+    aiEnabled,
   });
 
-  const totalHours = byRole.reduce((s, r) => s + r.hours, 0);
-  const totalCost = byRole.reduce((s, r) => s + r.cost, 0);
+  const byRoleMap = new Map(breakdown.byRole.map((r) => [r.role, r]));
+  const byRole: EffortSummary[] = ROLE_KEYS.map((rk) => ({
+    role: rk,
+    hours: byRoleMap.get(rk)?.adjustedHours ?? 0,
+    cost: byRoleMap.get(rk)?.cost ?? 0,
+  }));
 
-  return { byRole, totalHours, totalCost };
+  return {
+    byRole,
+    totalHours: breakdown.adjustedHours,
+    totalCost: breakdown.laborCost,
+    // Only warn about roles that actually carry hours in this scope.
+    unmatchedRoles: unmatchedRoles.filter((rk) => (byRoleMap.get(rk)?.adjustedHours ?? 0) > 0),
+    baseHours: breakdown.baseHours,
+    hoursSavedByAi: breakdown.hoursSavedByAi,
+    effectiveAiReductionPct: breakdown.effectiveAiReductionPct,
+    breakdown,
+  };
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -152,6 +209,10 @@ export const ScopeEngine = React.memo(function ScopeEngine({
   marginPct,
   salesCommissionPct,
   contingencyPct,
+  pricingMode,
+  markupPct,
+  discountPct,
+  roundingStep,
   onApply,
 }: ScopeEngineProps) {
   const queryClient = useQueryClient();
@@ -167,7 +228,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
       label: f.label,
       description: f.description ?? "",
       effort: f.effort,
-      icon: f.icon || "⚡",
+      icon: f.icon || "",
       tags: Array.isArray(f.tags) ? f.tags : [],
       isCustom: f.is_custom,
     })) as (FeatureDefinition & { isCustom?: boolean })[];
@@ -205,7 +266,6 @@ export const ScopeEngine = React.memo(function ScopeEngine({
     label: "",
     category: "frontend" as FeatureCategory,
     description: "",
-    icon: "⚡",
     tags: "custom, feature",
     designer: 8,
     frontend: 16,
@@ -221,17 +281,68 @@ export const ScopeEngine = React.memo(function ScopeEngine({
     [selections],
   );
 
+  const { data: aiFactors } = useAiFactors(companyId);
+  const [aiEnabled, setAiEnabled] = React.useState(true);
   const effort = React.useMemo(
-    () => calcEffort(selections, library, employees),
-    [selections, library, employees],
+    () => calcEffort(selections, library, employees, aiFactors as AiFactorMap, aiEnabled),
+    [selections, library, employees, aiFactors, aiEnabled],
   );
 
-  const contingencyAmt = effort.totalCost * (contingencyPct / 100);
-  const totalWithContingency = effort.totalCost + contingencyAmt;
-  const m = Math.min(marginPct, 90) / 100;
-  const price = m >= 1 ? totalWithContingency : totalWithContingency / (1 - m);
-  const commission = price * (salesCommissionPct / 100);
-  const netProfit = price - totalWithContingency - commission;
+  // Quote through the shared engine so Step 2 and Step 5 cannot disagree: this picks up
+  // markup mode, the discount and the rounding step, none of which were applied here.
+  const scopeResults = React.useMemo(
+    () =>
+      calculate({
+        projectName: projectName ?? "",
+        clientName: "",
+        description: "",
+        phases: [
+          {
+            id: "phase-scope-summary",
+            name: "Scope",
+            allocations: effort.byRole
+              .filter((r) => r.hours > 0)
+              .map((r) => ({
+                id: `scope-${r.role}`,
+                employeeId: null,
+                label: r.role,
+                hours: r.hours,
+                hourlyCost: r.hours > 0 ? r.cost / r.hours : 0,
+              })),
+          },
+        ],
+        support: { enabled: false, months: 0, hoursPerMonth: 0, hourlyCost: 0 },
+        additionalWork: [],
+        technology: [],
+        contingencyPct,
+        pricingMode,
+        marginPct,
+        markupPct,
+        discountPct,
+        salesCommissionPct,
+        roundingStep,
+        currency,
+        notes: "",
+      }),
+    [
+      effort,
+      projectName,
+      contingencyPct,
+      pricingMode,
+      marginPct,
+      markupPct,
+      discountPct,
+      salesCommissionPct,
+      roundingStep,
+      currency,
+    ],
+  );
+
+  const contingencyAmt = scopeResults.contingencyAmount;
+  const totalWithContingency = scopeResults.totalCost;
+  const price = scopeResults.price;
+  const commission = scopeResults.salesCommissionAmount;
+  const netProfit = scopeResults.netProfitAfterCommission;
 
   // Categories present in library
   const allCategories = React.useMemo(() => {
@@ -355,7 +466,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
 
     setSavingFeature(true);
     try {
-      const featureId = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const featureId = `custom_${crypto.randomUUID()}`;
       const tagsArray = newFeature.tags
         .split(",")
         .map((t) => t.trim())
@@ -397,7 +508,6 @@ export const ScopeEngine = React.memo(function ScopeEngine({
         label: newFeature.label.trim(),
         description: newFeature.description.trim(),
         effort: fullEffort,
-        icon: newFeature.icon || "⚡",
         tags: tagsArray,
         sort_order: 999,
         is_custom: true,
@@ -407,7 +517,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
       if (error) throw error;
 
       await queryClient.invalidateQueries({ queryKey: ["scope-features"] });
-      toast.success("✨ New feature added to your company's library!");
+      toast.success("New feature added to your company's library!");
       setIsAddModalOpen(false);
 
       // Automatically add it to the active scope
@@ -469,25 +579,35 @@ export const ScopeEngine = React.memo(function ScopeEngine({
       if (e.hours <= 0) continue;
       const emp = matchEmployeeForRole(e.role, employees);
       const phase = rolePhaseMap[e.role];
+      // Take the rate the panel actually costed this role at. Falling back to the
+      // employee record would hand unmatched roles a rate of 0, making their hours
+      // free in the calculator while the panel above shows them as charged.
+      const blendedRate = e.hours > 0 ? e.cost / e.hours : 0;
       phase.allocations.push({
         id: `alloc-scope-${e.role}`,
         employeeId: emp?.id ?? null,
         label: `${ROLE_LABELS[e.role].label}${emp ? ` (${emp.name})` : ""}`,
         hours: Math.round(e.hours),
-        hourlyCost: emp?.hourly_cost ?? 0,
+        hourlyCost: blendedRate,
       });
     }
 
     const phases = [designPhase, devPhase, qaPhase].filter((p) => p.allocations.length > 0);
 
-    const featureList = selections
-      .map((s) => {
-        const f = library.find((x) => x.id === s.featureId);
-        return f
-          ? `${f.icon} ${f.label} (${COMPLEXITY_LABELS[s.complexity].label}${s.quantity > 1 ? ` ×${s.quantity}` : ""})`
-          : "";
-      })
-      .filter(Boolean)
+    const describe = (s: SelectedFeature) => {
+      const f = library.find((x) => x.id === s.featureId);
+      if (!f) return "";
+      const inclusion = s.inclusion ?? "included";
+      const suffix = inclusion === "included" ? "" : ` — ${INCLUSION_META[inclusion].label}`;
+      return `${f.label} (${COMPLEXITY_LABELS[s.complexity].label}${s.quantity > 1 ? ` ×${s.quantity}` : ""})${suffix}`;
+    };
+    const included = selections.filter((s) => (s.inclusion ?? "included") === "included");
+    const notPriced = selections.filter((s) => (s.inclusion ?? "included") !== "included");
+    const featureList = [
+      ...included.map(describe),
+      ...(notPriced.length ? ["", "Not priced:", ...notPriced.map(describe)] : []),
+    ]
+      .filter((line) => line !== undefined)
       .join("\n");
 
     onApply({
@@ -504,10 +624,10 @@ export const ScopeEngine = React.memo(function ScopeEngine({
   return (
     <div className="space-y-5">
       {/* ── Header ── */}
-      <div className="rounded-xl border bg-gradient-to-br from-violet-500/10 via-card to-background p-4 shadow-sm">
+      <div className="rounded-xl border via-card to-background p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
           <div className="flex items-center gap-2">
-            <div className="size-8 rounded-lg bg-violet-600/10 text-violet-600 flex items-center justify-center font-bold">
+            <div className="size-8 rounded-lg bg-muted text-foreground flex items-center justify-center font-bold">
               <Sparkles className="size-4" />
             </div>
             <div>
@@ -515,7 +635,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                 Scope of Work & Effort Engine
                 <Badge
                   variant="outline"
-                  className="text-[10px] bg-violet-500/10 text-violet-600 border-violet-200"
+                  className="text-[10px] bg-muted text-foreground border-border"
                 >
                   Database Powered
                 </Badge>
@@ -532,16 +652,16 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               size="sm"
               variant="outline"
               onClick={() => setIsLibraryManagerOpen(true)}
-              className="gap-1.5 border-violet-300 dark:border-violet-800 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/50 shadow-xs text-xs font-semibold"
+              className="gap-1.5 border-border dark:border-border text-foreground dark:text-muted-foreground hover:bg-muted dark:hover:bg-muted shadow-xs text-xs font-semibold"
             >
-              <BookOpen className="size-3.5 text-violet-600" />
+              <BookOpen className="size-3.5 text-foreground" />
               <span>Feature Library & JSON</span>
             </Button>
             <Button
               size="sm"
               variant="default"
               onClick={() => setIsAddModalOpen(true)}
-              className="gap-1.5 bg-violet-600 hover:bg-violet-700 text-white shadow-xs text-xs font-semibold"
+              className="gap-1.5 bg-primary hover:bg-primary text-white shadow-xs text-xs font-semibold"
             >
               <PlusCircle className="size-3.5" />
               <span>+ Custom Feature</span>
@@ -550,9 +670,24 @@ export const ScopeEngine = React.memo(function ScopeEngine({
         </div>
 
         {employees.length === 0 && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 p-2.5 text-xs">
-            <AlertTriangle className="size-3.5 shrink-0" />
+          <div
+            role="status"
+            className="mt-3 flex items-center gap-2 rounded-lg bg-warning/10 text-warning dark:text-warning p-2.5 text-xs"
+          >
+            <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
             No team members loaded — add employees in Settings to get cost calculations.
+          </div>
+        )}
+
+        {employees.length > 0 && effort.unmatchedRoles.length > 0 && (
+          <div
+            role="status"
+            className="mt-3 flex items-center gap-2 rounded-lg bg-warning/10 text-warning dark:text-warning p-2.5 text-xs"
+          >
+            <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
+            No one matches {effort.unmatchedRoles.map((r) => ROLE_LABELS[r]).join(", ")} — those
+            hours are costed at the team average rate. Add a matching job title in People for an
+            exact figure.
           </div>
         )}
       </div>
@@ -585,7 +720,8 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               className="gap-1.5 shrink-0"
               disabled={selections.length === 0}
             >
-              <RefreshCw className="size-3.5" /> Clear ({selections.length})
+              <RefreshCw className="size-3.5" />
+              Clear ({selections.length})
             </Button>
           </div>
 
@@ -606,7 +742,6 @@ export const ScopeEngine = React.memo(function ScopeEngine({
             {allCategories.map((cat) => {
               const meta = CATEGORY_META[cat] ?? {
                 label: cat,
-                icon: "📁",
                 color: "text-foreground",
               };
               const count = library.filter((f) => f.category === cat).length;
@@ -624,10 +759,10 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                       : "bg-card hover:bg-muted border-border text-muted-foreground",
                   )}
                 >
-                  <span>{meta.icon}</span>
+                  <CategoryGlyph category={cat} />
                   <span>{meta.label}</span>
                   {selected > 0 && (
-                    <span className="ml-0.5 rounded-full bg-emerald-500 text-white text-[10px] px-1.5 leading-4 font-bold">
+                    <span className="ml-0.5 rounded-full bg-primary text-white text-[10px] px-1.5 leading-4 font-bold">
                       {selected}
                     </span>
                   )}
@@ -654,7 +789,6 @@ export const ScopeEngine = React.memo(function ScopeEngine({
             {Array.from(grouped.entries()).map(([cat, features]) => {
               const meta = CATEGORY_META[cat] ?? {
                 label: cat,
-                icon: "📁",
                 color: "text-foreground",
               };
               const isExpanded = expandedCategories.has(cat);
@@ -665,12 +799,10 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                     className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-muted/40 transition-colors cursor-pointer"
                     onClick={() => toggleCategory(cat)}
                   >
-                    <span className="text-lg">{meta.icon}</span>
-                    <span className={cn("font-display font-semibold text-sm flex-1", meta.color)}>
-                      {meta.label}
-                    </span>
+                    <CategoryGlyph category={cat} className="size-5" />
+                    <span className="font-display font-semibold text-sm flex-1">{meta.label}</span>
                     {selectedInCat > 0 && (
-                      <Badge className="bg-emerald-500 text-white text-[10px] h-5 px-1.5 font-bold">
+                      <Badge className="bg-primary text-white text-[10px] h-5 px-1.5 font-bold">
                         {selectedInCat} selected
                       </Badge>
                     )}
@@ -737,12 +869,12 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-medium text-sm text-foreground">
-                                    {feat.icon} {feat.label}
+                                    {feat.label}
                                   </span>
                                   {feat.isCustom && (
                                     <Badge
                                       variant="outline"
-                                      className="text-[9px] h-4 bg-amber-500/10 text-amber-600 border-amber-300"
+                                      className="text-[9px] h-4 bg-warning/10 text-warning border-warning"
                                     >
                                       Custom
                                     </Badge>
@@ -780,7 +912,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                                   <button
                                     onClick={(e) => handleDeleteCustomFeature(feat.id, e)}
                                     title="Delete custom feature from DB"
-                                    className="text-muted-foreground hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    className="text-muted-foreground hover:text-destructive p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                                   >
                                     <Trash2 className="size-3" />
                                   </button>
@@ -810,10 +942,10 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                                           "rounded px-2 py-0.5 text-[10px] font-semibold border transition-all cursor-pointer",
                                           sel.complexity === c
                                             ? c === "low"
-                                              ? "bg-emerald-500 text-white border-emerald-500 shadow-xs"
+                                              ? "bg-primary text-white border-border shadow-xs"
                                               : c === "medium"
-                                                ? "bg-amber-500 text-white border-amber-500 shadow-xs"
-                                                : "bg-red-500 text-white border-red-500 shadow-xs"
+                                                ? "bg-warning/10 text-white border-warning shadow-xs"
+                                                : "bg-destructive/10 text-white border-destructive shadow-xs"
                                             : "bg-card border-border text-muted-foreground hover:bg-muted",
                                         )}
                                       >
@@ -849,6 +981,32 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                                   >
                                     <Plus className="size-3" />
                                   </button>
+                                </div>
+
+                                {/* Scope classification — only Included reaches the price */}
+                                <div className="w-full mt-1">
+                                  <label htmlFor={`inclusion-${feat.id}`} className="sr-only">
+                                    Scope classification for {feat.label}
+                                  </label>
+                                  <select
+                                    id={`inclusion-${feat.id}`}
+                                    value={sel.inclusion ?? "included"}
+                                    onChange={(e) =>
+                                      updateSelection(feat.id, {
+                                        inclusion: e.target.value as ScopeInclusion,
+                                      })
+                                    }
+                                    className="h-7 w-full rounded-md border border-input bg-background px-2 text-[11px]"
+                                  >
+                                    {(
+                                      Object.keys(INCLUSION_META) as (keyof typeof INCLUSION_META)[]
+                                    ).map((key) => (
+                                      <option key={key} value={key}>
+                                        {INCLUSION_META[key].label}
+                                        {INCLUSION_META[key].billable ? "" : " · not priced"}
+                                      </option>
+                                    ))}
+                                  </select>
                                 </div>
 
                                 {/* Per-role mini hour tags */}
@@ -898,10 +1056,10 @@ export const ScopeEngine = React.memo(function ScopeEngine({
             className={cn(
               "rounded-xl border-2 border-dashed p-4 transition-all duration-200 text-center relative overflow-hidden",
               dragOverTarget === "main-scope"
-                ? "border-violet-500 bg-violet-500/15 shadow-lg scale-[1.01]"
+                ? "border-border bg-muted shadow-lg scale-[1.01]"
                 : draggingFeatureId
-                  ? "border-violet-400/80 bg-violet-500/5 animate-pulse"
-                  : "border-border/80 bg-muted/20 hover:border-violet-400/50",
+                  ? "border-border bg-muted animate-pulse"
+                  : "border-border/80 bg-muted/20 hover:border-border",
             )}
           >
             <div className="flex flex-col items-center gap-1.5 py-1">
@@ -909,15 +1067,15 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                 className={cn(
                   "size-10 rounded-full flex items-center justify-center transition-all",
                   dragOverTarget === "main-scope"
-                    ? "bg-violet-600 text-white scale-110"
-                    : "bg-violet-500/10 text-violet-600",
+                    ? "bg-primary text-white scale-110"
+                    : "bg-muted text-foreground",
                 )}
               >
                 <Layers className="size-5" />
               </div>
               <h3 className="font-display font-semibold text-sm">
                 {dragOverTarget === "main-scope"
-                  ? "🎯 Release to Drop Feature Here!"
+                  ? "Release to Drop Feature Here!"
                   : "Drag & Drop Scope Target"}
               </h3>
               <p className="text-xs text-muted-foreground max-w-[280px]">
@@ -931,9 +1089,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
             <div className="grid grid-cols-3 gap-1.5 mt-3 pt-3 border-t border-dashed">
               {(
                 [
-                  { id: "design", label: "🎨 Design", icon: "🎨" },
-                  { id: "dev", label: "💻 Dev", icon: "💻" },
-                  { id: "qa", label: "🧪 QA", icon: "🧪" },
+                  { id: "design", label: "Design" },
+                  { id: "dev", label: "Dev" },
+                  { id: "qa", label: "QA" },
                 ] as const
               ).map((phase) => (
                 <div
@@ -953,7 +1111,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                   className={cn(
                     "rounded-lg border text-center p-2 transition-all cursor-pointer text-xs font-semibold",
                     dragOverTarget === phase.id
-                      ? "border-violet-600 bg-violet-600 text-white shadow-md scale-105"
+                      ? "border-border bg-primary text-white shadow-md scale-105"
                       : "border-border bg-card/60 hover:bg-muted/50 text-foreground",
                   )}
                 >
@@ -965,6 +1123,77 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               ))}
             </div>
           </div>
+
+          {/* AI productivity adjustment */}
+          {effort.baseHours > 0 && (
+            <Card className="shadow-xs">
+              <CardHeader className="pb-3">
+                <CardTitle className="font-display text-sm font-semibold flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    <Sparkles className="size-4 text-muted-foreground" aria-hidden="true" />
+                    AI-adjusted effort
+                  </span>
+                  <label className="flex items-center gap-1.5 text-xs font-normal">
+                    <input
+                      type="checkbox"
+                      className="size-3.5 accent-current"
+                      checked={aiEnabled}
+                      onChange={(e) => setAiEnabled(e.target.checked)}
+                    />
+                    Apply AI factors
+                  </label>
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {aiEnabled
+                    ? "Estimated with AI assistance. Approvals, security sign-off, UAT and deployment are never reduced."
+                    : "Quoting traditional delivery — no AI reduction applied."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <dl className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-md border p-2">
+                    <dt className="text-[11px] text-muted-foreground">Base effort</dt>
+                    <dd className="font-display text-base font-bold tabular-nums">
+                      {Math.round(effort.baseHours)}h
+                    </dd>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <dt className="text-[11px] text-muted-foreground">AI saving</dt>
+                    <dd className="font-display text-base font-bold tabular-nums">
+                      {Math.round(effort.hoursSavedByAi)}h
+                      <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                        ({effort.effectiveAiReductionPct.toFixed(0)}%)
+                      </span>
+                    </dd>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <dt className="text-[11px] text-muted-foreground">Delivered effort</dt>
+                    <dd className="font-display text-base font-bold tabular-nums">
+                      {Math.round(effort.totalHours)}h
+                    </dd>
+                  </div>
+                </dl>
+                {effort.breakdown.excluded.length > 0 && (
+                  <div className="mt-3 space-y-1 border-t pt-3">
+                    <p className="text-[11px] font-semibold text-muted-foreground">
+                      Stated but not priced
+                    </p>
+                    {effort.breakdown.excluded.map((item) => (
+                      <div
+                        key={`${item.featureId}-${item.inclusion}`}
+                        className="flex items-center justify-between gap-2 text-[11px]"
+                      >
+                        <span className="truncate">{item.featureLabel}</span>
+                        <span className="shrink-0 text-muted-foreground">
+                          {INCLUSION_META[item.inclusion].label} · {Math.round(item.baseHours)}h
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Effort Summary by Role */}
           <Card className="border-primary/20 shadow-xs">
@@ -1034,7 +1263,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
 
           {/* Financial summary */}
           {effort.totalHours > 0 && (
-            <Card className="bg-gradient-to-br from-primary/5 via-card to-background border-primary/20 shadow-sm">
+            <Card className="from-primary/5 via-card to-background border-primary/20 shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="font-display text-sm font-semibold flex items-center gap-2">
                   <Sparkles className="size-4 text-primary" />
@@ -1058,7 +1287,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                     },
                     { label: "Quote to Client", value: price, muted: false },
                     {
-                      label: `Commission (Ayesha ${salesCommissionPct}%)`,
+                      label: `Commission (${salesCommissionPct}%)`,
                       value: commission,
                       muted: true,
                     },
@@ -1077,7 +1306,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                       className={cn(
                         "font-mono font-semibold",
                         value < 0
-                          ? "text-red-500"
+                          ? "text-destructive"
                           : !muted
                             ? "text-foreground font-bold"
                             : "text-muted-foreground",
@@ -1168,19 +1397,17 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                       key={sel.featureId}
                       className="flex items-center justify-between text-xs gap-2 rounded-lg bg-muted/30 px-2.5 py-1.5 hover:bg-muted/50 transition-colors"
                     >
-                      <span className="truncate font-medium">
-                        {feat.icon} {feat.label}
-                      </span>
+                      <span className="truncate font-medium">{feat.label}</span>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <Badge
                           variant="outline"
                           className={cn(
                             "text-[9px] h-4 px-1",
                             sel.complexity === "low"
-                              ? "text-emerald-600 border-emerald-300"
+                              ? "text-foreground border-border"
                               : sel.complexity === "medium"
-                                ? "text-amber-600 border-amber-300"
-                                : "text-red-600 border-red-300",
+                                ? "text-warning border-warning"
+                                : "text-destructive border-destructive",
                           )}
                         >
                           {COMPLEXITY_LABELS[sel.complexity].label}
@@ -1194,7 +1421,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                         <button
                           type="button"
                           onClick={() => toggleFeature(sel.featureId)}
-                          className="text-muted-foreground hover:text-red-500 transition-colors cursor-pointer ml-0.5"
+                          className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer ml-0.5"
                           title="Remove feature"
                         >
                           ×
@@ -1214,7 +1441,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
-              <PlusCircle className="size-5 text-violet-600" />
+              <PlusCircle className="size-5 text-foreground" />
               Add Custom Feature to Library
             </DialogTitle>
             <DialogDescription>
@@ -1224,19 +1451,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
           </DialogHeader>
 
           <form onSubmit={handleSaveCustomFeature} className="space-y-4">
-            <div className="grid grid-cols-[60px_1fr] gap-2">
-              <div>
-                <Label htmlFor="feat-icon" className="text-xs">
-                  Icon
-                </Label>
-                <Input
-                  id="feat-icon"
-                  value={newFeature.icon}
-                  onChange={(e) => setNewFeature({ ...newFeature, icon: e.target.value })}
-                  placeholder="⚡"
-                  className="text-center text-lg"
-                />
-              </div>
+            <div className="grid grid-cols-1 gap-2">
               <div>
                 <Label htmlFor="feat-name" className="text-xs">
                   Feature Name
@@ -1265,7 +1480,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               >
                 {allCategories.map((cat) => (
                   <option key={cat} value={cat}>
-                    {CATEGORY_META[cat]?.icon} {CATEGORY_META[cat]?.label}
+                    {CATEGORY_META[cat]?.label}
                   </option>
                 ))}
               </select>
@@ -1305,8 +1520,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               </Label>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div>
-                  <span className="text-[11px] text-muted-foreground">🎨 UI/UX Design</span>
+                  <span className="text-[11px] text-muted-foreground">UI/UX Design</span>
                   <Input
+                    aria-label="UI/UX Design"
                     type="number"
                     min="0"
                     value={newFeature.designer}
@@ -1317,8 +1533,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                   />
                 </div>
                 <div>
-                  <span className="text-[11px] text-muted-foreground">💻 Frontend Dev</span>
+                  <span className="text-[11px] text-muted-foreground">Frontend Dev</span>
                   <Input
+                    aria-label="Frontend Dev"
                     type="number"
                     min="0"
                     value={newFeature.frontend}
@@ -1329,8 +1546,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                   />
                 </div>
                 <div>
-                  <span className="text-[11px] text-muted-foreground">⚙️ Backend Dev</span>
+                  <span className="text-[11px] text-muted-foreground">Backend Dev</span>
                   <Input
+                    aria-label="Backend Dev"
                     type="number"
                     min="0"
                     value={newFeature.backend}
@@ -1341,8 +1559,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                   />
                 </div>
                 <div>
-                  <span className="text-[11px] text-muted-foreground">📱 Mobile Dev</span>
+                  <span className="text-[11px] text-muted-foreground">Mobile Dev</span>
                   <Input
+                    aria-label="Mobile Dev"
                     type="number"
                     min="0"
                     value={newFeature.mobile}
@@ -1353,8 +1572,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                   />
                 </div>
                 <div>
-                  <span className="text-[11px] text-muted-foreground">📋 PM / Lead</span>
+                  <span className="text-[11px] text-muted-foreground">PM / Lead</span>
                   <Input
+                    aria-label="PM / Lead"
                     type="number"
                     min="0"
                     value={newFeature.pm}
@@ -1363,8 +1583,9 @@ export const ScopeEngine = React.memo(function ScopeEngine({
                   />
                 </div>
                 <div>
-                  <span className="text-[11px] text-muted-foreground">🧪 QA / Testing</span>
+                  <span className="text-[11px] text-muted-foreground">QA / Testing</span>
                   <Input
+                    aria-label="QA / Testing"
                     type="number"
                     min="0"
                     value={newFeature.qa}
@@ -1387,7 +1608,7 @@ export const ScopeEngine = React.memo(function ScopeEngine({
               <Button
                 type="submit"
                 disabled={savingFeature}
-                className="bg-violet-600 hover:bg-violet-700 text-white"
+                className="bg-primary hover:bg-primary text-white"
               >
                 {savingFeature ? "Saving to DB..." : "Save Feature to DB"}
               </Button>

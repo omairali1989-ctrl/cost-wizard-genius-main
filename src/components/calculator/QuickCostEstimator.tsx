@@ -3,7 +3,7 @@
 // All rendering is delegated to focused sub-components in ./qce/
 import * as React from "react";
 import {
-  formatMoney,
+  calculate,
   type CalculationInputs,
   type TimeUnit,
   unitToHours,
@@ -16,8 +16,8 @@ import { PresetSelector } from "./qce/PresetSelector";
 import { ProjectDetails } from "./qce/ProjectDetails";
 import { TeamSquad } from "./qce/TeamSquad";
 import { CostSummaryPanel } from "./qce/CostSummaryPanel";
-import { PRESETS } from "./qce/presets";
 import { usePresetLibrary } from "./qce/presetLibrary";
+import { matchRoles } from "@/lib/role-matching";
 import {
   type RoleGroup,
   type TeamMemberRate,
@@ -31,7 +31,6 @@ import {
 // Re-export shared types so existing import sites still work
 export type { RoleGroup, MemberAllocation, TeamGroupDuration, ProjectPresetId, PresetConfig };
 export { getEmployeeRoleGroup, ROLE_GROUP_INFO } from "./qce/types";
-export { PRESETS } from "./qce/presets";
 // Keep backward-compat alias used by DetailedBreakdownView / calculator.tsx
 export type { PresetCategory } from "./qce/types";
 
@@ -58,24 +57,17 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
 }: QuickCostEstimatorProps) {
   const { presets } = usePresetLibrary(companyId);
   // ─── Core state ──────────────────────────────────────────────────────────
-  const [selectedPreset, setSelectedPreset] =
-    React.useState<ProjectPresetId>("mvp");
+  const [selectedPreset, setSelectedPreset] = React.useState<ProjectPresetId>("mvp");
   const [durationValue, setDurationValue] = React.useState<number>(4);
   const [durationUnit, setDurationUnit] = React.useState<TimeUnit>("weeks");
-  const [projectName, setProjectName] = React.useState(
-    "Startup MVP (Fast-Track) Estimate"
-  );
+  const [projectName, setProjectName] = React.useState("Startup MVP (Fast-Track) Estimate");
   const [clientName, setClientName] = React.useState("");
 
   // employeeId → allocation settings
-  const [allocations, setAllocations] = React.useState<
-    Record<string, MemberAllocation>
-  >({});
+  const [allocations, setAllocations] = React.useState<Record<string, MemberAllocation>>({});
 
   // Per-role-group duration (can be synced to project or custom)
-  const [groupDurations, setGroupDurations] = React.useState<
-    Record<RoleGroup, TeamGroupDuration>
-  >({
+  const [groupDurations, setGroupDurations] = React.useState<Record<RoleGroup, TeamGroupDuration>>({
     dev: { mode: "sync_project", value: 4, unit: "weeks" },
     design: { mode: "sync_project", value: 4, unit: "weeks" },
     pm_qa: { mode: "sync_project", value: 4, unit: "weeks" },
@@ -114,19 +106,15 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
       });
 
       const newAllocs: Record<string, MemberAllocation> = {};
-      for (const s of preset.suggestedRoles) {
-        const match = employees.find((e) =>
-          e.name.toLowerCase().includes(s.nameSubstr.toLowerCase())
-        );
-        if (match) {
+      for (const { role: s, employee: match } of matchRoles(preset.suggestedRoles, employees)
+        .matched) {
+        {
           newAllocs[match.id] = {
             mode: "sync",
             percent: s.allocationPct,
             customValue: Math.max(
               1,
-              Math.round(
-                preset.defaultDurationValue * (s.allocationPct / 100)
-              )
+              Math.round(preset.defaultDurationValue * (s.allocationPct / 100)),
             ),
             customUnit: preset.defaultDurationUnit,
           };
@@ -134,7 +122,7 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
       }
       setAllocations(newAllocs);
     },
-    [employees]
+    [employees],
   );
 
   // Initialize with first preset once employees load
@@ -144,23 +132,20 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
   }, [employees, presets]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Project duration ─────────────────────────────────────────────────────
-  const handleProjectDurationChange = React.useCallback(
-    (val: number, unit: TimeUnit) => {
-      const safeVal = Math.max(1, val);
-      setDurationValue(safeVal);
-      setDurationUnit(unit);
-      setGroupDurations((prev) => {
-        const next = { ...prev };
-        for (const k of Object.keys(next) as RoleGroup[]) {
-          if (next[k].mode === "sync_project") {
-            next[k] = { ...next[k], value: safeVal, unit };
-          }
+  const handleProjectDurationChange = React.useCallback((val: number, unit: TimeUnit) => {
+    const safeVal = Math.max(1, val);
+    setDurationValue(safeVal);
+    setDurationUnit(unit);
+    setGroupDurations((prev) => {
+      const next = { ...prev };
+      for (const k of Object.keys(next) as RoleGroup[]) {
+        if (next[k].mode === "sync_project") {
+          next[k] = { ...next[k], value: safeVal, unit };
         }
-        return next;
-      });
-    },
-    []
-  );
+      }
+      return next;
+    });
+  }, []);
 
   // ─── Group duration controls ──────────────────────────────────────────────
   const handleGroupDurationChange = React.useCallback(
@@ -170,7 +155,7 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
         [group]: { mode: "custom", value: Math.max(1, val), unit },
       }));
     },
-    []
+    [],
   );
 
   const handleGroupSyncProject = React.useCallback(
@@ -180,41 +165,32 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
         [group]: { mode: "sync_project", value: durationValue, unit: durationUnit },
       }));
     },
-    [durationValue, durationUnit]
+    [durationValue, durationUnit],
   );
 
-  const handleGroupIncrementDays = React.useCallback(
-    (group: RoleGroup, daysDelta: number) => {
-      setGroupDurations((prev) => {
-        const curr = prev[group];
-        const currHours = unitToHours(curr.value, curr.unit, HOURS_PER_DAY);
-        const newHours = Math.max(
-          HOURS_PER_DAY,
-          currHours + daysDelta * HOURS_PER_DAY
-        );
+  const handleGroupIncrementDays = React.useCallback((group: RoleGroup, daysDelta: number) => {
+    setGroupDurations((prev) => {
+      const curr = prev[group];
+      const currHours = unitToHours(curr.value, curr.unit, HOURS_PER_DAY);
+      const newHours = Math.max(HOURS_PER_DAY, currHours + daysDelta * HOURS_PER_DAY);
 
-        let newVal = Math.round((newHours / HOURS_PER_DAY) * 10) / 10;
-        let newUnit: TimeUnit = "days";
+      let newVal = Math.round((newHours / HOURS_PER_DAY) * 10) / 10;
+      let newUnit: TimeUnit = "days";
 
-        if (curr.unit === "weeks" && newHours % HOURS_PER_WEEK === 0) {
-          newVal = Math.round(newHours / HOURS_PER_WEEK);
-          newUnit = "weeks";
-        } else if (
-          curr.unit === "months" &&
-          newHours % HOURS_PER_MONTH === 0
-        ) {
-          newVal = Math.round(newHours / HOURS_PER_MONTH);
-          newUnit = "months";
-        }
+      if (curr.unit === "weeks" && newHours % HOURS_PER_WEEK === 0) {
+        newVal = Math.round(newHours / HOURS_PER_WEEK);
+        newUnit = "weeks";
+      } else if (curr.unit === "months" && newHours % HOURS_PER_MONTH === 0) {
+        newVal = Math.round(newHours / HOURS_PER_MONTH);
+        newUnit = "months";
+      }
 
-        return {
-          ...prev,
-          [group]: { mode: "custom", value: newVal, unit: newUnit },
-        };
-      });
-    },
-    []
-  );
+      return {
+        ...prev,
+        [group]: { mode: "custom", value: newVal, unit: newUnit },
+      };
+    });
+  }, []);
 
   const handleGroupPercentAdjust = React.useCallback(
     (group: RoleGroup, pct: number) => {
@@ -228,7 +204,7 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
         return next;
       });
     },
-    [employees]
+    [employees],
   );
 
   // ─── Individual member controls ───────────────────────────────────────────
@@ -251,7 +227,7 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
         },
       }));
     },
-    [employees, groupDurations, durationValue, durationUnit]
+    [employees, groupDurations, durationValue, durationUnit],
   );
 
   const removeIndividualMember = React.useCallback((empId: string) => {
@@ -274,7 +250,7 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
         return { ...prev, [empId]: { ...curr, ...patch } };
       });
     },
-    [durationValue, durationUnit]
+    [durationValue, durationUnit],
   );
 
   const handleIndividualIncrementDays = React.useCallback(
@@ -290,25 +266,14 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
           value: durationValue,
           unit: durationUnit,
         };
-        const teamBaseHours = unitToHours(
-          teamDur.value,
-          teamDur.unit,
-          HOURS_PER_DAY
-        );
+        const teamBaseHours = unitToHours(teamDur.value, teamDur.unit, HOURS_PER_DAY);
 
         let currHours =
           curr.mode === "custom"
-            ? unitToHours(
-                curr.customValue ?? 1,
-                curr.customUnit ?? "days",
-                HOURS_PER_DAY
-              )
+            ? unitToHours(curr.customValue ?? 1, curr.customUnit ?? "days", HOURS_PER_DAY)
             : teamBaseHours * ((curr.percent ?? 100) / 100);
 
-        const newHours = Math.max(
-          HOURS_PER_DAY,
-          currHours + daysDelta * HOURS_PER_DAY
-        );
+        const newHours = Math.max(HOURS_PER_DAY, currHours + daysDelta * HOURS_PER_DAY);
         const newDays = Math.round((newHours / HOURS_PER_DAY) * 10) / 10;
 
         return {
@@ -322,14 +287,11 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
         };
       });
     },
-    [employees, groupDurations, durationValue, durationUnit]
+    [employees, groupDurations, durationValue, durationUnit],
   );
 
   // ─── Live calculation ─────────────────────────────────────────────────────
   const liveCalc = React.useMemo(() => {
-    let totalHours = 0;
-    let laborCost = 0;
-
     const assignedPeople: Array<{
       employee: TeamMemberRate;
       hours: number;
@@ -357,19 +319,13 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
       const personHours =
         alloc.mode === "custom"
           ? Math.round(
-              unitToHours(
-                alloc.customValue ?? 1,
-                alloc.customUnit ?? "days",
-                HOURS_PER_DAY
-              )
+              unitToHours(alloc.customValue ?? 1, alloc.customUnit ?? "days", HOURS_PER_DAY),
             )
           : Math.round(teamBaseHours * ((alloc.percent ?? 100) / 100));
 
       if (personHours <= 0) continue;
 
       const personCost = personHours * emp.hourly_cost;
-      totalHours += personHours;
-      laborCost += personCost;
 
       assignedPeople.push({
         employee: emp,
@@ -384,37 +340,59 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
       });
     }
 
-    const contingency = laborCost * (contingencyPct / 100);
-    const totalCost = laborCost + contingency;
-
-    const m = Math.min(marginPct, 90) / 100;
-    const price = m >= 1 ? totalCost : totalCost / (1 - m);
-    const profit = price - totalCost;
-    const commission = price * (salesCommissionPct / 100);
-    const netProfit = profit - commission;
-
-    const pricePerHour = totalHours > 0 ? price / totalHours : 0;
-    const costPerHour = totalHours > 0 ? totalCost / totalHours : 0;
+    // Keep the quick estimator on the same calculation engine as the full
+    // wizard. This prevents margin, commission, and rate-card drift between
+    // the two entry points.
+    const calculation = calculate({
+      projectName,
+      clientName,
+      description: "",
+      phases: [
+        {
+          id: "quick-estimator",
+          name: "Project Delivery",
+          allocations: assignedPeople.map((person) => ({
+            id: person.employee.id,
+            employeeId: person.employee.id,
+            label: person.employee.job_title || person.employee.name,
+            hours: person.hours,
+            hourlyCost: person.hourlyCost,
+          })),
+        },
+      ],
+      support: { enabled: false, months: 0, hoursPerMonth: 0, hourlyCost: 0 },
+      additionalWork: [],
+      technology: [],
+      contingencyPct,
+      pricingMode: "margin",
+      marginPct,
+      markupPct: 0,
+      discountPct: 0,
+      salesCommissionPct,
+      roundingStep: 0,
+      currency,
+      notes: "",
+    });
 
     const byGroup = (g: RoleGroup) => assignedPeople.filter((p) => p.roleGroup === g);
 
     return {
-      totalHours,
-      laborCost,
-      contingency,
-      totalCost,
-      price,
-      profit,
-      commission,
-      netProfit,
-      pricePerHour,
-      pricePerDay: pricePerHour * HOURS_PER_DAY,
-      pricePerWeek: pricePerHour * HOURS_PER_WEEK,
-      pricePerMonth: pricePerHour * HOURS_PER_MONTH,
-      costPerHour,
-      costPerDay: costPerHour * HOURS_PER_DAY,
-      costPerWeek: costPerHour * HOURS_PER_WEEK,
-      costPerMonth: costPerHour * HOURS_PER_MONTH,
+      totalHours: calculation.totalHours,
+      laborCost: calculation.laborCost,
+      contingency: calculation.contingencyAmount,
+      totalCost: calculation.totalCost,
+      price: calculation.price,
+      profit: calculation.profit,
+      commission: calculation.salesCommissionAmount,
+      netProfit: calculation.netProfitAfterCommission,
+      pricePerHour: calculation.pricePerHour,
+      pricePerDay: calculation.pricePerDay,
+      pricePerWeek: calculation.pricePerWeek,
+      pricePerMonth: calculation.pricePerMonth,
+      costPerHour: calculation.costPerHour,
+      costPerDay: calculation.costPerDay,
+      costPerWeek: calculation.costPerWeek,
+      costPerMonth: calculation.costPerMonth,
       assignedPeople,
       devHours: byGroup("dev").reduce((s, p) => s + p.hours, 0),
       designHours: byGroup("design").reduce((s, p) => s + p.hours, 0),
@@ -473,6 +451,9 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
     contingencyPct,
     marginPct,
     salesCommissionPct,
+    projectName,
+    clientName,
+    currency,
   ]);
 
   // ─── Apply to full estimate ───────────────────────────────────────────────
@@ -516,21 +497,13 @@ export const QuickCostEstimator = React.memo(function QuickCostEstimator({
   // ─── Derived counts ───────────────────────────────────────────────────────
   const unassignedEmployees = React.useMemo(
     () => employees.filter((emp) => !allocations[emp.id]),
-    [employees, allocations]
+    [employees, allocations],
   );
 
-  const devCount = liveCalc.assignedPeople.filter(
-    (p) => p.roleGroup === "dev"
-  ).length;
-  const designCount = liveCalc.assignedPeople.filter(
-    (p) => p.roleGroup === "design"
-  ).length;
-  const pmQaCount = liveCalc.assignedPeople.filter(
-    (p) => p.roleGroup === "pm_qa"
-  ).length;
-  const leadCount = liveCalc.assignedPeople.filter(
-    (p) => p.roleGroup === "leadership"
-  ).length;
+  const devCount = liveCalc.assignedPeople.filter((p) => p.roleGroup === "dev").length;
+  const designCount = liveCalc.assignedPeople.filter((p) => p.roleGroup === "design").length;
+  const pmQaCount = liveCalc.assignedPeople.filter((p) => p.roleGroup === "pm_qa").length;
+  const leadCount = liveCalc.assignedPeople.filter((p) => p.roleGroup === "leadership").length;
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (

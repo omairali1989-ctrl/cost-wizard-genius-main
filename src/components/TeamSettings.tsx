@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Copy, Mail, RotateCcw, Trash2, UserMinus } from "lucide-react";
+import { Copy, Mail, RefreshCw, RotateCcw, Trash2, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { logActivity, useInvalidate, type WorkspaceData } from "@/lib/workspace";
@@ -50,6 +50,7 @@ interface Invitation {
   token: string;
   status: string;
   expires_at: string;
+  responded_at: string | null;
   created_at: string;
 }
 
@@ -65,8 +66,14 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
   const [pendingRemoval, setPendingRemoval] = useState<Member | null>(null);
   const [lastLink, setLastLink] = useState<string | null>(null);
 
-  const { data: members = [] } = useQuery({
+  const {
+    data: members = [],
+    isFetching: membersFetching,
+    refetch: refetchMembers,
+  } = useQuery({
     queryKey: ["members", companyId],
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
     queryFn: async (): Promise<Member[]> => {
       const { data, error } = await supabase.rpc("company_members");
       if (error) throw error;
@@ -74,12 +81,18 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
     },
   });
 
-  const { data: invitations = [] } = useQuery({
+  const {
+    data: invitations = [],
+    isFetching: invitationsFetching,
+    refetch: refetchInvitations,
+  } = useQuery({
     queryKey: ["invitations", companyId],
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
     queryFn: async (): Promise<Invitation[]> => {
       const { data, error } = await supabase
         .from("invitations")
-        .select("id, email, role, token, status, expires_at, created_at")
+        .select("id, email, role, token, status, expires_at, responded_at, created_at")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as Invitation[];
@@ -99,8 +112,10 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
     e.preventDefault();
     const clean = email.trim().toLowerCase();
     if (!clean) return;
-    if (members.some((m) => (m.email ?? "").toLowerCase() === clean))
-      { toast.error("That person is already in your workspace."); return; }
+    if (members.some((m) => (m.email ?? "").toLowerCase() === clean)) {
+      toast.error("That person is already in your workspace.");
+      return;
+    }
     setBusy(true);
     const { data, error } = await supabase
       .from("invitations")
@@ -130,7 +145,10 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
 
   const setStatus = async (inv: Invitation, status: string, action: string) => {
     const { error } = await supabase.from("invitations").update({ status }).eq("id", inv.id);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     await logActivity(companyId, action, "invitation", inv.id, { email: inv.email });
     invalidate(["invitations", "audit"]);
     toast.success(status === "revoked" ? "Invitation revoked" : "Invitation updated");
@@ -143,7 +161,10 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
       .eq("id", inv.id)
       .select("token")
       .single();
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     await logActivity(companyId, "resent", "invitation", inv.id, { email: inv.email });
     setLastLink(inviteUrl(data.token));
     invalidate(["invitations", "audit"]);
@@ -155,7 +176,10 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
       _user_id: member.user_id,
       _role: next as never,
     });
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     invalidate(["members", "audit", "workspace"]);
     toast.success(`${member.full_name ?? member.email} is now ${roleLabel(next)}`);
   };
@@ -164,13 +188,20 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
     if (!pendingRemoval) return;
     const { error } = await supabase.rpc("remove_member", { _user_id: pendingRemoval.user_id });
     setPendingRemoval(null);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     invalidate(["members", "audit"]);
     toast.success("Member removed");
   };
 
   const pending = useMemo(() => invitations.filter((i) => i.status === "pending"), [invitations]);
   const past = useMemo(() => invitations.filter((i) => i.status !== "pending"), [invitations]);
+  const refreshTeam = async () => {
+    await Promise.all([refetchMembers(), refetchInvitations()]);
+    toast.success("Team status refreshed");
+  };
 
   return (
     <div className="space-y-6">
@@ -184,6 +215,7 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
         <CardContent>
           <form onSubmit={invite} className="grid gap-3 sm:grid-cols-[2fr_1.4fr_auto]">
             <Input
+              aria-label="name@company.com"
               type="email"
               required
               placeholder="name@company.com"
@@ -234,9 +266,21 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
       <Card>
         <CardHeader>
           <CardTitle className="font-display text-base">Members</CardTitle>
-          <CardDescription>
-            Role changes take effect straight away on their next action.
-          </CardDescription>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardDescription>
+              Approved invitations appear here automatically. Role changes take effect on the next
+              action.
+            </CardDescription>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void refreshTeam()}
+              disabled={membersFetching || invitationsFetching}
+            >
+              <RefreshCw className={`size-4 ${membersFetching ? "animate-spin" : ""}`} />
+              Refresh team
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
@@ -296,6 +340,13 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
                   </TableRow>
                 );
               })}
+              {members.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                    No team members have joined yet.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -326,28 +377,38 @@ export function TeamSettings({ workspace }: { workspace: WorkspaceData }) {
                 <Button size="sm" variant="ghost" onClick={() => resend(i)}>
                   <RotateCcw className="size-4" /> Resend
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setStatus(i, "revoked", "revoked")}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setStatus(i, "revoked", "revoked")}
+                >
                   <Trash2 className="size-4" /> Revoke
                 </Button>
               </div>
             </div>
           ))}
           {past.length > 0 && (
-            <div className="pt-2 text-xs text-muted-foreground">
+            <div className="space-y-2 border-t pt-3 text-xs text-muted-foreground">
               {past.map((i) => (
-                <p key={i.id}>
-                  {i.email} — {i.status}
-                </p>
+                <div key={i.id} className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-foreground">{i.email}</span>
+                  <Badge variant={i.status === "accepted" ? "default" : "secondary"}>
+                    {i.status === "accepted"
+                      ? "Added to team"
+                      : i.status.charAt(0).toUpperCase() + i.status.slice(1)}
+                  </Badge>
+                  {i.status === "accepted" && <Badge variant="outline">{roleLabel(i.role)}</Badge>}
+                  {i.responded_at && (
+                    <span>updated {new Date(i.responded_at).toLocaleDateString()}</span>
+                  )}
+                </div>
               ))}
             </div>
           )}
         </CardContent>
       </Card>
 
-      <AlertDialog
-        open={!!pendingRemoval}
-        onOpenChange={(o) => !o && setPendingRemoval(null)}
-      >
+      <AlertDialog open={!!pendingRemoval} onOpenChange={(o) => !o && setPendingRemoval(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove this person?</AlertDialogTitle>

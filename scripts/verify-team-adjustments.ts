@@ -22,7 +22,9 @@ console.log(`3. Design Team Duration: ${designTeamVal} ${designTeamUnit} = ${des
 
 // Dev 1 (Hassnain - 100%): devTeamHours * 100% = 120 hrs
 const hassnainHours = Math.round(devTeamHours * 1.0);
-console.log(`4. Hassnain (100% Dev Team): ${hassnainHours} hrs (${hassnainHours / HOURS_PER_DAY} days)`);
+console.log(
+  `4. Hassnain (100% Dev Team): ${hassnainHours} hrs (${hassnainHours / HOURS_PER_DAY} days)`,
+);
 
 // Dev 2 (Osama - 50% part-time): devTeamHours * 50% = 60 hrs
 const osamaHours = Math.round(devTeamHours * 0.5);
@@ -34,7 +36,9 @@ console.log(`6. Faiza (60% Design Team): ${faizaHours} hrs (${faizaHours / HOURS
 
 // Designer 2 (Yousuf - 100%): designTeamHours * 100% = 80 hrs
 const yousufHours = Math.round(designTeamHours * 1.0);
-console.log(`7. Yousuf Ansari (100% Design Team): ${yousufHours} hrs (${yousufHours / HOURS_PER_DAY} days)`);
+console.log(
+  `7. Yousuf Ansari (100% Design Team): ${yousufHours} hrs (${yousufHours / HOURS_PER_DAY} days)`,
+);
 
 // Individual override (Ayesha - Custom 3 days advisory):
 const ayeshaCustomVal = 3;

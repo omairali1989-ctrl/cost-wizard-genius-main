@@ -35,10 +35,8 @@ export const ProjectDetails = React.memo(function ProjectDetails({
   return (
     <div className="rounded-xl border bg-card p-4 space-y-4">
       <div className="flex items-center justify-between border-b pb-2.5">
-        <Label className="text-sm font-semibold">
-          2. Project Timeline &amp; Details
-        </Label>
-        <div className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+        <Label className="text-sm font-semibold">2. Project Timeline &amp; Details</Label>
+        <div className="flex items-center gap-1 text-xs text-foreground dark:text-muted-foreground font-medium">
           <ShieldCheck className="size-3.5" />
           <span>Overheads, Rent &amp; Director Payroll Absorbed</span>
         </div>
@@ -49,6 +47,7 @@ export const ProjectDetails = React.memo(function ProjectDetails({
         <div className="space-y-1 sm:col-span-1">
           <Label className="text-xs text-muted-foreground">Project Name</Label>
           <Input
+            aria-label="Project Name"
             value={projectName}
             onChange={(e) => onProjectNameChange(e.target.value)}
             placeholder="e.g. Alisons Mobile App"
@@ -57,10 +56,9 @@ export const ProjectDetails = React.memo(function ProjectDetails({
 
         {/* Client Name */}
         <div className="space-y-1 sm:col-span-1">
-          <Label className="text-xs text-muted-foreground">
-            Client Name (Optional)
-          </Label>
+          <Label className="text-xs text-muted-foreground">Client Name (Optional)</Label>
           <Input
+            aria-label="Client Name (Optional)"
             value={clientName}
             onChange={(e) => onClientNameChange(e.target.value)}
             placeholder="e.g. Acme Corp"
@@ -74,10 +72,9 @@ export const ProjectDetails = React.memo(function ProjectDetails({
             <Input
               type="number"
               min={1}
+              aria-label="Project duration"
               value={durationValue}
-              onChange={(e) =>
-                onDurationChange(Math.max(1, Number(e.target.value)), durationUnit)
-              }
+              onChange={(e) => onDurationChange(Math.max(1, Number(e.target.value)), durationUnit)}
               className="w-20"
             />
             <Select

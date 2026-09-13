@@ -1,21 +1,19 @@
 import * as React from "react";
 import {
-  ShieldCheck,
-  TrendingUp,
-  Clock,
-  Calendar,
-  Layers,
-  Users,
-  Server,
-  Building2,
-  Zap,
-  Coffee,
-  Wifi,
-  Sparkles,
-  DollarSign,
   Award,
   BarChart3,
+  Building2,
+  Calendar,
+  CalendarDays,
+  CalendarRange,
   CheckCircle2,
+  Clock,
+  DollarSign,
+  Layers,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  Users,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,18 +23,25 @@ import {
   type CalculationInputs,
   type CalculationResults,
   type OverheadRecord,
-  HOURS_PER_DAY,
-  HOURS_PER_WEEK,
 } from "@/lib/pricing";
 import type { TeamMemberRate } from "./AllocationRow";
 import { ROLE_GROUP_INFO, type RoleGroup } from "./qce/types";
 
-function getRoleGroupForEmployee(emp: { job_title?: string | null; department?: string | null }): RoleGroup {
+function getRoleGroupForEmployee(emp: {
+  job_title?: string | null;
+  department?: string | null;
+}): RoleGroup {
   const title = (emp.job_title || "").toLowerCase();
   const dept = (emp.department || "").toLowerCase();
   if (title.includes("design") || dept.includes("design")) return "design";
-  if (title.includes("project manager") || title.includes("qa") || title.includes("quality")) return "pm_qa";
-  if (title.includes("director") || title.includes("sales") || dept.includes("sales") || dept.includes("management")) {
+  if (title.includes("project manager") || title.includes("qa") || title.includes("quality"))
+    return "pm_qa";
+  if (
+    title.includes("director") ||
+    title.includes("sales") ||
+    dept.includes("sales") ||
+    dept.includes("management")
+  ) {
     return "leadership";
   }
   return "dev";
@@ -81,11 +86,12 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
           const l = (a.label || "").toLowerCase();
           if (l.includes("design") || l.includes("ui") || l.includes("ux")) group = "design";
           else if (l.includes("pm") || l.includes("qa") || l.includes("test")) group = "pm_qa";
-          else if (l.includes("sales") || l.includes("lead") || l.includes("dir")) group = "leadership";
+          else if (l.includes("sales") || l.includes("lead") || l.includes("dir"))
+            group = "leadership";
           stats[group].members.add(a.label || "Specialist");
         }
-        const h = Number(a.hours) || 0;
-        const c = h * (Number(a.hourlyCost) || 0);
+        const h = Math.max(Number(a.hours) || 0, 0);
+        const c = h * Math.max(Number(a.hourlyCost) || 0, 0);
         stats[group].hours += h;
         stats[group].cost += c;
         stats[group].count += 1;
@@ -97,7 +103,22 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
 
   // Total labor cost from phases
   const totalLaborCost = results.laborCost || 1;
-  const totalLaborHours = results.totalHours || 1;
+  const laborHours =
+    results.laborHours ??
+    inputs.phases.reduce(
+      (sum, phase) =>
+        sum +
+        phase.allocations.reduce(
+          (phaseSum, allocation) => phaseSum + Math.max(Number(allocation.hours) || 0, 0),
+          0,
+        ),
+      0,
+    );
+  const hoursPerDay = Number(results.hoursPerDay ?? inputs.hoursPerDay ?? 8) || 8;
+  const hoursPerWeek = Number(results.hoursPerWeek ?? hoursPerDay * 5) || hoursPerDay * 5;
+  const hoursPerMonth =
+    Number(results.hoursPerMonth ?? inputs.hoursPerMonth ?? hoursPerDay * 20) || hoursPerDay * 20;
+  const totalLaborHours = laborHours || 1;
 
   // 2. Multi-Unit Rate Cards
   const rateCards = [
@@ -107,54 +128,42 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
       cost: results.costPerHour,
       price: results.pricePerHour,
       profit: results.pricePerHour - results.costPerHour,
-      icon: "⏱️",
+      icon: Clock,
     },
     {
-      unit: "Daily Rate (8 hrs)",
-      hours: 8,
+      unit: `Daily Rate (${hoursPerDay} hrs)`,
+      hours: hoursPerDay,
       cost: results.costPerDay,
       price: results.pricePerDay,
       profit: results.pricePerDay - results.costPerDay,
-      icon: "📅",
+      icon: Calendar,
     },
     {
-      unit: "Weekly Rate (40 hrs)",
-      hours: 40,
+      unit: `Weekly Rate (${hoursPerWeek} hrs)`,
+      hours: hoursPerWeek,
       cost: results.costPerWeek,
       price: results.pricePerWeek,
       profit: results.pricePerWeek - results.costPerWeek,
-      icon: "📆",
+      icon: CalendarDays,
     },
     {
-      unit: "Monthly Sprint (160 hrs)",
-      hours: 160,
+      unit: `Monthly Sprint (${hoursPerMonth} hrs)`,
+      hours: hoursPerMonth,
       cost: results.costPerMonth,
       price: results.pricePerMonth,
       profit: results.pricePerMonth - results.costPerMonth,
-      icon: "🗓️",
+      icon: CalendarRange,
     },
   ];
 
-  // 3. Absorbed Overheads reference
-  const defaultOverheads = [
-    { name: "Office Rent (Gulshan / PECHS)", monthly: 143000, icon: Building2, desc: "Prime commercial office space" },
-    { name: "Electricity (K-Electric)", monthly: 103420, icon: Zap, desc: "Commercial grid + UPS & power backup" },
-    { name: "Peon / Office Boy / Tea & Refreshments", monthly: 32000, icon: Coffee, desc: "Hospitality & office pantry" },
-    { name: "Microsoft Office 365 Enterprise", monthly: 26233, icon: ShieldCheck, desc: "$1,124 / year company license" },
-    { name: "Dedicated Cloud Server & Infrastructure", monthly: 17500, icon: Server, desc: "$748 / year enterprise staging server" },
-    { name: "High-Speed Fiber Internet & Backup", monthly: 18000, icon: Wifi, desc: "Dual ISP dedicated leased line" },
-    { name: "General Maintenance & Office Supplies", monthly: 14776, icon: Layers, desc: "Stationery, maintenance, hardware" },
-    { name: "Security Guard & Surveillance", monthly: 9000, icon: ShieldCheck, desc: "24/7 building security" },
-  ];
-
-  const displayOverheads = overheads.length > 0
-    ? overheads.map((o) => ({
-        name: o.name,
-        monthly: monthlyOverheadAmount(o),
-        icon: Building2,
-        desc: o.category || "Absorbed Operating Expense",
-      }))
-    : defaultOverheads;
+  // Overheads come from the active workspace. Never display illustrative
+  // fallback values as if they were included in the quote.
+  const displayOverheads = overheads.map((o) => ({
+    name: o.name,
+    monthly: monthlyOverheadAmount(o),
+    icon: Building2,
+    desc: o.category || "Absorbed Operating Expense",
+  }));
 
   const totalMonthlyOverhead = displayOverheads.reduce((sum, o) => sum + o.monthly, 0);
 
@@ -182,14 +191,14 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
         <div className="rounded-xl border bg-card p-3 flex flex-col justify-between shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-[11px] font-medium">
             <span>Loaded Delivery Cost</span>
-            <ShieldCheck className="size-3.5 text-blue-500" />
+            <ShieldCheck className="size-3.5 text-foreground" />
           </div>
           <div className="mt-1">
             <span className="font-display text-lg sm:text-xl font-bold text-foreground tabular">
               {formatMoney(results.totalCost, currency)}
             </span>
-            <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
-              ✓ 100% overheads loaded
+            <span className="block text-[10px] text-foreground dark:text-muted-foreground font-mono mt-0.5">
+              100% overheads loaded
             </span>
           </div>
         </div>
@@ -198,45 +207,45 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
         <div className="rounded-xl border bg-card p-3 flex flex-col justify-between shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-[11px] font-medium">
             <span>Gross Profit</span>
-            <TrendingUp className="size-3.5 text-emerald-500" />
+            <TrendingUp className="size-3.5 text-foreground" />
           </div>
           <div className="mt-1">
             <span className="font-display text-lg sm:text-xl font-bold text-foreground tabular">
               {formatMoney(results.profit, currency)}
             </span>
-            <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold font-mono mt-0.5">
+            <span className="block text-[10px] text-foreground dark:text-muted-foreground font-semibold font-mono mt-0.5">
               {results.marginPct.toFixed(1)}% Gross Margin
             </span>
           </div>
         </div>
 
-        {/* Sales Commission (Ayesha Badar 5%) */}
+        {/* Sales commission, per the workspace's commission rules */}
         <div className="rounded-xl border bg-card p-3 flex flex-col justify-between shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-[11px] font-medium">
             <span>Sales Commission</span>
-            <Award className="size-3.5 text-amber-500" />
+            <Award className="size-3.5 text-warning" />
           </div>
           <div className="mt-1">
             <span className="font-display text-lg sm:text-xl font-bold text-foreground tabular">
               {formatMoney(results.salesCommissionAmount, currency)}
             </span>
-            <span className="block text-[10px] text-amber-600 dark:text-amber-400 font-mono mt-0.5">
-              {results.salesCommissionPct}% (Ayesha Badar)
+            <span className="block text-[10px] text-warning dark:text-warning font-mono mt-0.5">
+              {results.salesCommissionPct}% of price
             </span>
           </div>
         </div>
 
         {/* Net Profit After Commission */}
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 flex flex-col justify-between shadow-xs">
-          <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400 text-[11px] font-medium">
+        <div className="rounded-xl border border-border bg-muted p-3 flex flex-col justify-between shadow-xs">
+          <div className="flex items-center justify-between text-foreground dark:text-muted-foreground text-[11px] font-medium">
             <span>Company Net Profit</span>
-            <Sparkles className="size-3.5 text-emerald-600" />
+            <Sparkles className="size-3.5 text-foreground" />
           </div>
           <div className="mt-1">
-            <span className="font-display text-lg sm:text-xl font-bold text-emerald-700 dark:text-emerald-300 tabular">
+            <span className="font-display text-lg sm:text-xl font-bold text-foreground dark:text-muted-foreground tabular">
               {formatMoney(results.netProfitAfterCommission, currency)}
             </span>
-            <span className="block text-[10px] text-emerald-600/80 dark:text-emerald-400/80 font-mono mt-0.5">
+            <span className="block text-[10px] text-foreground dark:text-muted-foreground font-mono mt-0.5">
               After sales payout
             </span>
           </div>
@@ -246,7 +255,7 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
         <div className="rounded-xl border bg-card p-3 flex flex-col justify-between shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground text-[11px] font-medium">
             <span>Delivery Timeline</span>
-            <Calendar className="size-3.5 text-indigo-500" />
+            <Calendar className="size-3.5 text-foreground" />
           </div>
           <div className="mt-1">
             <span className="font-display text-lg sm:text-xl font-bold text-foreground tabular">
@@ -268,11 +277,13 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
               <span>Multi-Unit Rate Card & Quotation Analysis</span>
             </CardTitle>
             <Badge variant="outline" className="text-[11px]">
-              Based on 8h/day · 40h/wk · 160h/mo
+              Based on {results.hoursPerDay}h/day · {results.hoursPerWeek}h/wk ·{" "}
+              {results.hoursPerMonth}h/mo
             </Badge>
           </div>
           <CardDescription>
-            Seamlessly quote by the hour, day, week, month, or fixed total price with consistent margin discipline.
+            Seamlessly quote by the hour, day, week, month, or fixed total price with consistent
+            margin discipline.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -297,7 +308,7 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
                   return (
                     <tr key={rc.unit} className="hover:bg-muted/30 transition">
                       <td className="py-2.5 px-3 font-medium flex items-center gap-2">
-                        <span>{rc.icon}</span>
+                        <rc.icon className="size-4 text-muted-foreground" aria-hidden="true" />
                         <span>{rc.unit}</span>
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono tabular text-muted-foreground">
@@ -306,13 +317,13 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
                       <td className="py-2.5 px-3 text-right font-mono tabular font-bold text-foreground">
                         {formatMoney(rc.price, currency)}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono tabular text-emerald-600 dark:text-emerald-400 font-semibold">
+                      <td className="py-2.5 px-3 text-right font-mono tabular text-foreground dark:text-muted-foreground font-semibold">
                         +{formatMoney(rc.profit, currency)}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono tabular text-amber-600 dark:text-amber-400">
+                      <td className="py-2.5 px-3 text-right font-mono tabular text-warning dark:text-warning">
                         -{formatMoney(comm, currency)}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono tabular font-bold text-emerald-700 dark:text-emerald-300">
+                      <td className="py-2.5 px-3 text-right font-mono tabular font-bold text-foreground dark:text-muted-foreground">
                         {formatMoney(net, currency)}
                       </td>
                       <td className="py-2.5 px-3 text-center">
@@ -326,7 +337,7 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
                 {/* Total Scope Row */}
                 <tr className="bg-primary/5 font-bold border-t-2 border-primary/30">
                   <td className="py-3 px-3 flex items-center gap-2 text-foreground font-semibold">
-                    <span>🏆</span>
+                    <span></span>
                     <span>Total Project Contract</span>
                   </td>
                   <td className="py-3 px-3 text-right font-mono tabular text-muted-foreground">
@@ -335,19 +346,17 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
                   <td className="py-3 px-3 text-right font-mono tabular text-primary text-sm">
                     {formatMoney(results.price, currency)}
                   </td>
-                  <td className="py-3 px-3 text-right font-mono tabular text-emerald-600 dark:text-emerald-400">
+                  <td className="py-3 px-3 text-right font-mono tabular text-foreground dark:text-muted-foreground">
                     +{formatMoney(results.profit, currency)}
                   </td>
-                  <td className="py-3 px-3 text-right font-mono tabular text-amber-600 dark:text-amber-400">
+                  <td className="py-3 px-3 text-right font-mono tabular text-warning dark:text-warning">
                     -{formatMoney(results.salesCommissionAmount, currency)}
                   </td>
-                  <td className="py-3 px-3 text-right font-mono tabular text-emerald-700 dark:text-emerald-300 text-sm">
+                  <td className="py-3 px-3 text-right font-mono tabular text-foreground dark:text-muted-foreground text-sm">
                     {formatMoney(results.netProfitAfterCommission, currency)}
                   </td>
                   <td className="py-3 px-3 text-center">
-                    <Badge className="font-mono text-xs">
-                      {results.marginPct.toFixed(1)}%
-                    </Badge>
+                    <Badge className="font-mono text-xs">{results.marginPct.toFixed(1)}%</Badge>
                   </td>
                 </tr>
               </tbody>
@@ -369,7 +378,8 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
             </span>
           </div>
           <CardDescription>
-            Allocation of work hours and direct loaded costs across development, design, quality assurance, and project management.
+            Allocation of work hours and direct loaded costs across development, design, quality
+            assurance, and project management.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -390,7 +400,7 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold flex items-center gap-1.5">
-                        <span>{info.icon}</span>
+                        <info.icon className="size-4 text-muted-foreground" aria-hidden="true" />
                         <span>{info.label}</span>
                       </span>
                       <Badge variant="outline" className={`text-[10px] ${info.badgeClass}`}>
@@ -412,12 +422,12 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
                       <div
                         className={`h-full transition-all duration-300 ${
                           grp === "dev"
-                            ? "bg-blue-500"
+                            ? "bg-primary"
                             : grp === "design"
-                            ? "bg-purple-500"
-                            : grp === "pm_qa"
-                            ? "bg-emerald-500"
-                            : "bg-amber-500"
+                              ? "bg-primary"
+                              : grp === "pm_qa"
+                                ? "bg-primary"
+                                : "bg-warning/10"
                         }`}
                         style={{ width: `${Math.min(hoursShare, 100)}%` }}
                       />
@@ -435,7 +445,9 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
                       Assigned Members ({memberList.length}):
                     </span>
                     {memberList.length === 0 ? (
-                      <span className="text-[11px] text-muted-foreground/60 italic">None allocated</span>
+                      <span className="text-[11px] text-muted-foreground/60 italic">
+                        None allocated
+                      </span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {memberList.map((m) => (
@@ -469,7 +481,8 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
             </Badge>
           </div>
           <CardDescription>
-            Detailed breakdown of each project milestone with assigned specialists, duration equivalents, and loaded labor cost.
+            Detailed breakdown of each project milestone with assigned specialists, duration
+            equivalents, and loaded labor cost.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -495,36 +508,42 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
                 <tbody className="divide-y divide-border/60">
                   {inputs.phases.map((ph, idx) => {
                     const phaseHours = ph.allocations.reduce(
-                      (s, a) => s + (Number(a.hours) || 0),
+                      (s, a) => s + Math.max(Number(a.hours) || 0, 0),
                       0,
                     );
                     const phaseCost = ph.allocations.reduce(
-                      (s, a) => s + (Number(a.hours) || 0) * (Number(a.hourlyCost) || 0),
+                      (s, a) =>
+                        s +
+                        Math.max(Number(a.hours) || 0, 0) * Math.max(Number(a.hourlyCost) || 0, 0),
                       0,
                     );
-                    const days = Math.round((phaseHours / HOURS_PER_DAY) * 10) / 10;
-                    const weeks = Math.round((phaseHours / HOURS_PER_WEEK) * 10) / 10;
+                    const days = Math.round((phaseHours / hoursPerDay) * 10) / 10;
+                    const weeks = Math.round((phaseHours / hoursPerWeek) * 10) / 10;
                     const effectiveRate = phaseHours > 0 ? phaseCost / phaseHours : 0;
                     const share = totalLaborCost > 0 ? (phaseCost / totalLaborCost) * 100 : 0;
 
                     const rolesSummary = ph.allocations.map((a) => {
-                      const emp = a.employeeId ? employees.find((e) => e.id === a.employeeId) : null;
+                      const emp = a.employeeId
+                        ? employees.find((e) => e.id === a.employeeId)
+                        : null;
                       return emp?.name ?? a.label ?? "Specialist";
                     });
 
                     return (
                       <tr key={ph.id} className="hover:bg-muted/30 transition">
                         <td className="py-2.5 px-3 font-medium text-foreground">
-                          <span className="mr-1 text-muted-foreground font-mono">
-                            {idx + 1}.
-                          </span>
+                          <span className="mr-1 text-muted-foreground font-mono">{idx + 1}.</span>
                           {ph.name}
                         </td>
                         <td className="py-2.5 px-3 text-muted-foreground">
                           {rolesSummary.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
                               {rolesSummary.map((r, i) => (
-                                <Badge key={i} variant="outline" className="text-[10px] py-0 px-1.5 font-normal">
+                                <Badge
+                                  key={i}
+                                  variant="outline"
+                                  className="text-[10px] py-0 px-1.5 font-normal"
+                                >
                                   {r}
                                 </Badge>
                               ))}
@@ -564,58 +583,78 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
       </Card>
 
       {/* 5. Transparent Overhead Absorption Statement */}
-      <Card className="shadow-xs border border-emerald-500/30 bg-emerald-500/5">
+      <Card className="shadow-xs border border-border bg-muted">
         <CardHeader className="pb-2.5">
           <div className="flex items-center justify-between">
-            <CardTitle className="font-display text-sm sm:text-base flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
-              <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
+            <CardTitle className="font-display text-sm sm:text-base flex items-center gap-2 text-foreground dark:text-muted-foreground">
+              <ShieldCheck className="size-4 text-foreground dark:text-muted-foreground" />
               <span>Corporate Overhead Absorption Statement</span>
             </CardTitle>
-            <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs">
+            <Badge className="bg-primary hover:bg-primary text-white font-mono text-xs">
               {formatMoney(totalMonthlyOverhead, currency)} / mo absorbed
             </Badge>
           </div>
-          <CardDescription className="text-emerald-700/80 dark:text-emerald-400/80">
-            Alisons Technology runs on fully-loaded rate discipline. Fixed facility, software, power, and infrastructure expenses are automatically incorporated into every billable delivery hour.
+          <CardDescription className="text-foreground dark:text-muted-foreground">
+            Alisons Technology runs on fully-loaded rate discipline. Fixed facility, software,
+            power, and infrastructure expenses are automatically incorporated into every billable
+            delivery hour.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {displayOverheads.map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.name}
-                  className="rounded-lg border border-emerald-500/20 bg-background/80 p-2.5 shadow-2xs space-y-1"
-                >
-                  <div className="flex items-center gap-2 text-xs font-medium text-foreground">
-                    <Icon className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="truncate">{item.name}</span>
+          {displayOverheads.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border p-4 text-xs text-muted-foreground">
+              No workspace overhead records are configured. The estimate does not display or invent
+              overhead values.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {displayOverheads.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={item.name}
+                    className="rounded-lg border border-border bg-background/80 p-2.5 shadow-2xs space-y-1"
+                  >
+                    <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+                      <Icon className="size-3.5 text-foreground dark:text-muted-foreground shrink-0" />
+                      <span className="truncate">{item.name}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between pt-1">
+                      <span className="font-mono font-bold text-xs text-foreground dark:text-muted-foreground tabular">
+                        {formatMoney(item.monthly, currency)}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">/ month</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground/80 line-clamp-1">{item.desc}</p>
                   </div>
-                  <div className="flex items-baseline justify-between pt-1">
-                    <span className="font-mono font-bold text-xs text-emerald-700 dark:text-emerald-300 tabular">
-                      {formatMoney(item.monthly, currency)}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">/ month</span>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground/80 line-clamp-1">{item.desc}</p>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="rounded-lg bg-background/90 border p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
             <div className="space-y-0.5">
               <span className="font-semibold text-foreground flex items-center gap-1.5">
-                <CheckCircle2 className="size-3.5 text-emerald-600" />
+                <CheckCircle2 className="size-3.5 text-foreground" />
                 Zero Overhead Leakage Guarantee
               </span>
               <p className="text-[11px] text-muted-foreground">
-                Whether a project runs for 2 days, 3 weeks, or 6 months, electricity, cloud server fees, Office 365 seats, and executive payroll are mathematically recovered.
+                Whether a project runs for 2 days, 3 weeks, or 6 months, electricity, cloud server
+                fees, Office 365 seats, and executive payroll are mathematically recovered.
               </p>
             </div>
-            <Badge variant="outline" className="font-mono text-xs px-2.5 py-1 shrink-0 border-emerald-500/40">
-              14 Active Team Members Absorbing
+            <Badge
+              variant="outline"
+              className="font-mono text-xs px-2.5 py-1 shrink-0 border-border"
+            >
+              {
+                new Set(
+                  inputs.phases.flatMap((phase) =>
+                    phase.allocations.map((allocation) => allocation.employeeId).filter(Boolean),
+                  ),
+                ).size
+              }{" "}
+              Assigned Team Members
             </Badge>
           </div>
         </CardContent>
@@ -634,7 +673,8 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
             </span>
           </div>
           <CardDescription>
-            Transparent accounting walk from direct engineering labor through risk contingency, gross margin, sales commission, and net company profit.
+            Transparent accounting walk from direct engineering labor through risk contingency,
+            gross margin, sales commission, and net company profit.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -642,11 +682,13 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
             {/* Direct Labor */}
             <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40">
               <div className="flex items-center gap-2">
-                <span className="rounded bg-blue-500/10 text-blue-600 px-1.5 py-0.5 font-mono text-[11px] font-bold">
+                <span className="rounded bg-muted text-foreground px-1.5 py-0.5 font-mono text-[11px] font-bold">
                   1
                 </span>
                 <span className="font-medium text-foreground">Direct Phase Engineering Labor</span>
-                <span className="text-[11px] text-muted-foreground">({results.totalHours} team hours)</span>
+                <span className="text-[11px] text-muted-foreground">
+                  ({laborHours} delivery hours)
+                </span>
               </div>
               <span className="font-mono tabular font-semibold text-foreground">
                 +{formatMoney(results.laborCost, currency)}
@@ -657,10 +699,12 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
             {results.supportCost > 0 && (
               <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40">
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-purple-500/10 text-purple-600 px-1.5 py-0.5 font-mono text-[11px] font-bold">
+                  <span className="rounded bg-muted text-foreground px-1.5 py-0.5 font-mono text-[11px] font-bold">
                     2
                   </span>
-                  <span className="font-medium text-foreground">Post-Launch Support & Maintenance</span>
+                  <span className="font-medium text-foreground">
+                    Post-Launch Support & Maintenance
+                  </span>
                   <span className="text-[11px] text-muted-foreground">
                     ({inputs.support.months} mos @ {inputs.support.hoursPerMonth}h/mo)
                   </span>
@@ -675,10 +719,12 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
             {results.additionalCost > 0 && (
               <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40">
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-indigo-500/10 text-indigo-600 px-1.5 py-0.5 font-mono text-[11px] font-bold">
+                  <span className="rounded bg-muted text-foreground px-1.5 py-0.5 font-mono text-[11px] font-bold">
                     3
                   </span>
-                  <span className="font-medium text-foreground">Additional Scope Deliverables & Assets</span>
+                  <span className="font-medium text-foreground">
+                    Additional Scope Deliverables & Assets
+                  </span>
                 </div>
                 <span className="font-mono tabular font-semibold text-foreground">
                   +{formatMoney(results.additionalCost, currency)}
@@ -690,10 +736,12 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
             {results.technologyCost > 0 && (
               <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40">
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-sky-500/10 text-sky-600 px-1.5 py-0.5 font-mono text-[11px] font-bold">
+                  <span className="rounded bg-muted text-foreground px-1.5 py-0.5 font-mono text-[11px] font-bold">
                     4
                   </span>
-                  <span className="font-medium text-foreground">Technology Licenses, Cloud & APIs</span>
+                  <span className="font-medium text-foreground">
+                    Technology Licenses, Cloud & APIs
+                  </span>
                 </div>
                 <span className="font-mono tabular font-semibold text-foreground">
                   +{formatMoney(results.technologyCost, currency)}
@@ -704,13 +752,17 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
             {/* Contingency */}
             <div className="flex items-center justify-between p-2 rounded-lg bg-muted/40">
               <div className="flex items-center gap-2">
-                <span className="rounded bg-amber-500/10 text-amber-600 px-1.5 py-0.5 font-mono text-[11px] font-bold">
+                <span className="rounded bg-warning/10 text-warning px-1.5 py-0.5 font-mono text-[11px] font-bold">
                   5
                 </span>
-                <span className="font-medium text-foreground">Project Risk & Contingency Buffer</span>
-                <span className="text-[11px] text-muted-foreground">({inputs.contingencyPct}%)</span>
+                <span className="font-medium text-foreground">
+                  Project Risk & Contingency Buffer
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  ({inputs.contingencyPct}%)
+                </span>
               </div>
-              <span className="font-mono tabular font-semibold text-amber-600 dark:text-amber-400">
+              <span className="font-mono tabular font-semibold text-warning dark:text-warning">
                 +{formatMoney(results.contingencyAmount, currency)}
               </span>
             </div>
@@ -724,12 +776,14 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
             </div>
 
             {/* Gross Profit Margin */}
-            <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+            <div className="flex items-center justify-between p-2 rounded-lg bg-muted text-foreground dark:text-muted-foreground">
               <div className="flex items-center gap-2">
-                <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-mono text-[11px] font-bold">
+                <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-bold">
                   6
                 </span>
-                <span className="font-medium">Target Company Margin ({results.marginPct.toFixed(1)}%)</span>
+                <span className="font-medium">
+                  Target Company Margin ({results.marginPct.toFixed(1)}%)
+                </span>
               </div>
               <span className="font-mono tabular font-bold">
                 +{formatMoney(results.profit, currency)}
@@ -746,13 +800,13 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
 
             {/* Sales Commission */}
             {results.salesCommissionAmount > 0 && (
-              <div className="flex items-center justify-between p-2 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300">
+              <div className="flex items-center justify-between p-2 rounded-lg bg-warning/10 text-warning dark:text-warning">
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-[11px] font-bold">
+                  <span className="rounded bg-warning/20 px-1.5 py-0.5 font-mono text-[11px] font-bold">
                     7
                   </span>
                   <span className="font-medium">
-                    Sales Commission Payout ({results.salesCommissionPct}% to Ayesha Badar)
+                    Sales Commission Payout ({results.salesCommissionPct}% of price)
                   </span>
                 </div>
                 <span className="font-mono tabular font-semibold">
@@ -762,9 +816,9 @@ export const DetailedBreakdownView = React.memo(function DetailedBreakdownView({
             )}
 
             {/* Company Net Take-Home */}
-            <div className="flex items-center justify-between p-3 rounded-xl border border-emerald-500/40 bg-emerald-500/15 text-emerald-900 dark:text-emerald-200 font-bold text-base">
+            <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted text-foreground dark:text-muted-foreground font-bold text-base">
               <span>Net Company Profit After Commission</span>
-              <span className="font-mono tabular text-lg text-emerald-700 dark:text-emerald-300">
+              <span className="font-mono tabular text-lg text-foreground dark:text-muted-foreground">
                 {formatMoney(results.netProfitAfterCommission, currency)}
               </span>
             </div>

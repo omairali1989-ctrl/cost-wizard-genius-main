@@ -34,11 +34,13 @@ export const CalculatorExtras = React.memo(function CalculatorExtras({
           {additionalWork.map((i) => (
             <div key={i.id} className="grid gap-2 sm:grid-cols-[2fr_1fr_auto]">
               <Input
+                aria-label="Description"
                 placeholder="Description"
                 value={i.label}
                 onChange={(e) => onUpdateAdditionalWork(i.id, { label: e.target.value })}
               />
               <Input
+                aria-label="Amount"
                 type="number"
                 placeholder="Amount"
                 value={i.amount || ""}
@@ -67,23 +69,27 @@ export const CalculatorExtras = React.memo(function CalculatorExtras({
           {technology.map((t) => (
             <div key={t.id} className="grid gap-2 sm:grid-cols-[2fr_1fr_1fr_1fr_auto]">
               <Input
+                aria-label="Tool or service"
                 placeholder="Tool or service"
                 value={t.label}
                 onChange={(e) => onUpdateTechnology(t.id, { label: e.target.value })}
               />
               <Input
+                aria-label="Monthly"
                 type="number"
                 placeholder="Monthly"
                 value={t.monthlyCost || ""}
                 onChange={(e) => onUpdateTechnology(t.id, { monthlyCost: Number(e.target.value) })}
               />
               <Input
+                aria-label="Months"
                 type="number"
                 placeholder="Months"
                 value={t.months || ""}
                 onChange={(e) => onUpdateTechnology(t.id, { months: Number(e.target.value) })}
               />
               <Input
+                aria-label="One-off"
                 type="number"
                 placeholder="One-off"
                 value={t.oneOffCost || ""}

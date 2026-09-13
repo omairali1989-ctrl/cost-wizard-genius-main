@@ -2,7 +2,12 @@ import * as React from "react";
 import { AlertTriangle, Clock, Calendar, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatMoney, type CalculationResults, type ValidationIssue, type TimeUnit } from "@/lib/pricing";
+import {
+  formatMoney,
+  type CalculationResults,
+  type ValidationIssue,
+  type TimeUnit,
+} from "@/lib/pricing";
 
 interface CalculatorLiveResultProps {
   currency: string;
@@ -59,21 +64,21 @@ export const CalculatorLiveResult = React.memo(function CalculatorLiveResult({
         };
       case "days":
         return {
-          title: "Daily Rate Quote (8h)",
+          title: `Daily Rate Quote (${results.hoursPerDay}h)`,
           price: results.pricePerDay,
           cost: results.costPerDay,
           unitLabel: "/ day",
         };
       case "weeks":
         return {
-          title: "Weekly Rate Quote (40h)",
+          title: `Weekly Rate Quote (${results.hoursPerWeek}h)`,
           price: results.pricePerWeek,
           cost: results.costPerWeek,
           unitLabel: "/ week",
         };
       case "months":
         return {
-          title: "Monthly Rate Quote (160h)",
+          title: `Monthly Rate Quote (${results.hoursPerMonth}h)`,
           price: results.pricePerMonth,
           cost: results.costPerMonth,
           unitLabel: "/ month",
@@ -94,7 +99,7 @@ export const CalculatorLiveResult = React.memo(function CalculatorLiveResult({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="font-display text-base">Cost & Price Summary</CardTitle>
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground dark:text-muted-foreground">
             <ShieldCheck className="size-3" /> Overheads Loaded
           </span>
         </div>
@@ -190,15 +195,21 @@ export const CalculatorLiveResult = React.memo(function CalculatorLiveResult({
         {/* Quick Rate Metrics Grid */}
         <div className="grid grid-cols-2 gap-2 text-xs border rounded-lg p-2.5 bg-muted/30">
           <div>
-            <span className="text-muted-foreground block text-[11px]">Per Day (8h):</span>
+            <span className="text-muted-foreground block text-[11px]">
+              Per Day ({results.hoursPerDay}h):
+            </span>
             <span className="font-semibold">{formatMoney(results.pricePerDay, currency)}</span>
           </div>
           <div>
-            <span className="text-muted-foreground block text-[11px]">Per Week (40h):</span>
+            <span className="text-muted-foreground block text-[11px]">
+              Per Week ({results.hoursPerWeek}h):
+            </span>
             <span className="font-semibold">{formatMoney(results.pricePerWeek, currency)}</span>
           </div>
           <div>
-            <span className="text-muted-foreground block text-[11px]">Per Month (160h):</span>
+            <span className="text-muted-foreground block text-[11px]">
+              Per Month ({results.hoursPerMonth}h):
+            </span>
             <span className="font-semibold">{formatMoney(results.pricePerMonth, currency)}</span>
           </div>
           <div>
@@ -210,18 +221,29 @@ export const CalculatorLiveResult = React.memo(function CalculatorLiveResult({
         {/* Cost Rows Breakdown */}
         <div className="space-y-1.5 pt-1">
           <Row
-            label="Delivery Team Hours"
+            label="Total Billable Hours"
             value={`${Math.round(results.totalHours)} hrs (~${results.totalDays}d / ${results.totalWeeks}w / ${results.totalMonths}mo)`}
           />
-          <Row label="Engineering Labor" value={formatMoney(results.laborCost, currency)} />
+          <Row
+            label="Engineering Labor"
+            subtext={`${Math.round(results.laborHours)} delivery hours`}
+            value={formatMoney(results.laborCost, currency)}
+          />
           {results.supportCost > 0 && (
-            <Row label="Ongoing Support" value={formatMoney(results.supportCost, currency)} />
+            <Row
+              label="Ongoing Support"
+              subtext={`${Math.round(results.supportHours)} support hours`}
+              value={formatMoney(results.supportCost, currency)}
+            />
           )}
           {results.additionalCost > 0 && (
             <Row label="Additional Scope" value={formatMoney(results.additionalCost, currency)} />
           )}
           {results.technologyCost > 0 && (
-            <Row label="Tech & Infrastructure" value={formatMoney(results.technologyCost, currency)} />
+            <Row
+              label="Tech & Infrastructure"
+              value={formatMoney(results.technologyCost, currency)}
+            />
           )}
           <Row
             label={`Contingency Buffer (${contingencyPct}%)`}
@@ -229,15 +251,19 @@ export const CalculatorLiveResult = React.memo(function CalculatorLiveResult({
           />
 
           <div className="border-t pt-2 space-y-1.5">
-            <Row label="Total Development Cost" value={formatMoney(results.totalCost, currency)} strong />
+            <Row
+              label="Total Development Cost"
+              value={formatMoney(results.totalCost, currency)}
+              strong
+            />
             <Row label="Gross Profit" value={formatMoney(results.profit, currency)} />
 
-            {/* Sales Commission for Ayesha */}
+            {/* Sales commission on this deal */}
             {results.salesCommissionPct > 0 && (
               <>
                 <Row
                   label={`Sales Commission (${results.salesCommissionPct}%)`}
-                  subtext="Payable to Sales (Ayesha)"
+                  subtext="Payable to sales"
                   value={formatMoney(results.salesCommissionAmount, currency)}
                 />
                 <Row
@@ -257,7 +283,9 @@ export const CalculatorLiveResult = React.memo(function CalculatorLiveResult({
               <li
                 key={idx}
                 className={`flex gap-2 text-xs ${
-                  i.level === "error" ? "text-destructive font-medium" : "text-amber-600 dark:text-amber-400"
+                  i.level === "error"
+                    ? "text-destructive font-medium"
+                    : "text-warning dark:text-warning"
                 }`}
               >
                 <AlertTriangle className="mt-0.5 size-3 shrink-0" />

@@ -1,5 +1,6 @@
 // ─── Shared types & constants for the Quick Cost Estimator ───────────────────
 
+import { Briefcase, ClipboardList, Code2, Palette, type LucideIcon } from "lucide-react";
 import type { TimeUnit } from "@/lib/pricing";
 
 export type RoleGroup = "dev" | "design" | "pm_qa" | "leadership";
@@ -35,7 +36,9 @@ export type PresetCategory =
   | "Mobile & Backend"
   | "CMS & E-Commerce"
   | "Design & Creatives"
-  | "Startups & Custom";
+  | "Startups & Custom"
+  | "Business Systems"
+  | "AI & Automation";
 
 export type StackCategory =
   | "frontend"
@@ -85,31 +88,27 @@ export interface PresetConfig {
 
 export const ROLE_GROUP_INFO: Record<
   RoleGroup,
-  { label: string; icon: string; badgeClass: string }
+  { label: string; icon: LucideIcon; badgeClass: string }
 > = {
   dev: {
     label: "Development Team",
-    icon: "💻",
-    badgeClass:
-      "bg-blue-500/10 text-blue-600 border-blue-200 dark:border-blue-800",
+    icon: Code2,
+    badgeClass: "bg-muted text-foreground border-border dark:border-border",
   },
   design: {
     label: "Design & Creative",
-    icon: "🎨",
-    badgeClass:
-      "bg-purple-500/10 text-purple-600 border-purple-200 dark:border-purple-800",
+    icon: Palette,
+    badgeClass: "bg-muted text-foreground border-border dark:border-border",
   },
   pm_qa: {
     label: "PM & QA",
-    icon: "📋",
-    badgeClass:
-      "bg-emerald-500/10 text-emerald-600 border-emerald-200 dark:border-emerald-800",
+    icon: ClipboardList,
+    badgeClass: "bg-muted text-foreground border-border dark:border-border",
   },
   leadership: {
     label: "Leadership & Sales",
-    icon: "💼",
-    badgeClass:
-      "bg-amber-500/10 text-amber-600 border-amber-200 dark:border-amber-800",
+    icon: Briefcase,
+    badgeClass: "bg-warning/10 text-warning border-warning dark:border-warning",
   },
 };
 
@@ -117,11 +116,7 @@ export function getEmployeeRoleGroup(emp: TeamMemberRate): RoleGroup {
   const title = (emp.job_title || "").toLowerCase();
   const dept = (emp.department || "").toLowerCase();
   if (title.includes("design") || dept === "design") return "design";
-  if (
-    title.includes("project manager") ||
-    title.includes("qa") ||
-    title.includes("quality")
-  )
+  if (title.includes("project manager") || title.includes("qa") || title.includes("quality"))
     return "pm_qa";
   if (
     title.includes("director") ||
@@ -137,6 +132,8 @@ export const PRESET_CATEGORIES: PresetCategory[] = [
   "All",
   "Mobile & Backend",
   "CMS & E-Commerce",
+  "Business Systems",
+  "AI & Automation",
   "Design & Creatives",
   "Startups & Custom",
 ];

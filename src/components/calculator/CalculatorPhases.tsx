@@ -15,12 +15,15 @@ import { Badge } from "@/components/ui/badge";
 import { PhaseCard } from "./PhaseCard";
 import type { TeamMemberRate } from "./AllocationRow";
 import type { Allocation, Phase } from "@/lib/pricing";
+import { matchEmployeeForRole } from "@/lib/role-matching";
 
 interface CalculatorPhasesProps {
   phases: Phase[];
   employees: TeamMemberRate[];
   rateFor: (id: string) => number;
   currency?: string;
+  hoursPerDay?: number;
+  hoursPerMonth?: number;
   onAddPhase: () => void;
   onAddPhaseTemplate?: (phase: Phase) => void;
   onRemovePhase: (phaseId: string) => void;
@@ -35,6 +38,8 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
   employees,
   rateFor,
   currency = "PKR",
+  hoursPerDay = 8,
+  hoursPerMonth = 160,
   onAddPhase,
   onAddPhaseTemplate,
   onRemovePhase,
@@ -45,24 +50,15 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
 }: CalculatorPhasesProps) {
   const totalPhaseHours = React.useMemo(() => {
     return phases.reduce(
-      (sum, p) => sum + p.allocations.reduce((s, a) => s + Number(a.hours || 0), 0),
+      (sum, p) => sum + p.allocations.reduce((s, a) => s + Math.max(Number(a.hours) || 0, 0), 0),
       0,
     );
   }, [phases]);
 
-  // Helper to find employee by keyword
+  // Resolve a role to whoever in THIS workspace fills it. The previous version fell
+  // back to specific people's names, which matched nobody in any other workspace.
   const findEmp = React.useCallback(
-    (keyword: string) => {
-      const kw = keyword.toLowerCase();
-      return (
-        employees.find(
-          (e) =>
-            (e.job_title || "").toLowerCase().includes(kw) ||
-            e.name.toLowerCase().includes(kw) ||
-            (e.department || "").toLowerCase().includes(kw),
-        ) ?? null
-      );
-    },
+    (role: string) => matchEmployeeForRole(role, employees) ?? null,
     [employees],
   );
 
@@ -76,37 +72,37 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
       switch (type) {
         case "ui":
           name = "UI/UX & Interactive Prototyping";
-          emp = findEmp("design") || findEmp("yousuf ansari") || findEmp("faiza");
+          emp = findEmp("designer");
           roleLabel = emp?.job_title ?? "UI/UX Designer";
           hours = 40;
           break;
         case "frontend":
           name = "Frontend Web Development";
-          emp = findEmp("mern") || findEmp("hassnain") || findEmp("minhaj");
+          emp = findEmp("frontend");
           roleLabel = emp?.job_title ?? "Frontend Engineer";
           hours = 60;
           break;
         case "backend":
           name = "Backend & Database Engine";
-          emp = findEmp("laravel") || findEmp("osama") || findEmp("architect") || findEmp("yousuf");
+          emp = findEmp("backend");
           roleLabel = emp?.job_title ?? "Backend Engineer";
           hours = 60;
           break;
         case "mobile":
           name = "Mobile App Development";
-          emp = findEmp("mobile") || findEmp("mubashir");
+          emp = findEmp("mobile");
           roleLabel = emp?.job_title ?? "Mobile Developer";
           hours = 60;
           break;
         case "qa":
           name = "QA & Integration Testing";
-          emp = findEmp("qa") || findEmp("quality") || findEmp("kamran");
+          emp = findEmp("qa");
           roleLabel = emp?.job_title ?? "QA Engineer";
           hours = 24;
           break;
         case "devops":
           name = "DevOps, CI/CD & Cloud Launch";
-          emp = findEmp("architect") || findEmp("lead") || findEmp("yousuf");
+          emp = findEmp("devops") || findEmp("tech lead");
           roleLabel = emp?.job_title ?? "DevOps & Cloud Lead";
           hours = 16;
           break;
@@ -145,7 +141,8 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
               <span>2. Project Delivery Phases & Team Hours</span>
             </CardTitle>
             <CardDescription>
-              Assign team members to specific development phases. Loaded hourly costs automatically include absorbed overheads.
+              Assign team members to specific development phases. Loaded hourly costs automatically
+              include absorbed overheads.
             </CardDescription>
           </div>
           <Badge variant="outline" className="font-mono text-xs px-2.5 py-1">
@@ -166,9 +163,9 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
               variant="secondary"
               size="sm"
               onClick={() => handleAddTemplate("ui")}
-              className="h-7 text-xs gap-1 px-2 hover:bg-purple-500/15 hover:text-purple-700 dark:hover:text-purple-300"
+              className="h-7 text-xs gap-1 px-2 hover:bg-muted hover:text-foreground dark:hover:text-muted-foreground"
             >
-              <Palette className="size-3 text-purple-500" />
+              <Palette className="size-3 text-foreground" />
               <span>+ UI/UX Design</span>
             </Button>
             <Button
@@ -176,9 +173,9 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
               variant="secondary"
               size="sm"
               onClick={() => handleAddTemplate("frontend")}
-              className="h-7 text-xs gap-1 px-2 hover:bg-blue-500/15 hover:text-blue-700 dark:hover:text-blue-300"
+              className="h-7 text-xs gap-1 px-2 hover:bg-muted hover:text-foreground dark:hover:text-muted-foreground"
             >
-              <Code2 className="size-3 text-blue-500" />
+              <Code2 className="size-3 text-foreground" />
               <span>+ Frontend Web</span>
             </Button>
             <Button
@@ -186,9 +183,9 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
               variant="secondary"
               size="sm"
               onClick={() => handleAddTemplate("backend")}
-              className="h-7 text-xs gap-1 px-2 hover:bg-indigo-500/15 hover:text-indigo-700 dark:hover:text-indigo-300"
+              className="h-7 text-xs gap-1 px-2 hover:bg-muted hover:text-foreground dark:hover:text-muted-foreground"
             >
-              <Database className="size-3 text-indigo-500" />
+              <Database className="size-3 text-foreground" />
               <span>+ Backend & API</span>
             </Button>
             <Button
@@ -196,9 +193,9 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
               variant="secondary"
               size="sm"
               onClick={() => handleAddTemplate("mobile")}
-              className="h-7 text-xs gap-1 px-2 hover:bg-sky-500/15 hover:text-sky-700 dark:hover:text-sky-300"
+              className="h-7 text-xs gap-1 px-2 hover:bg-muted hover:text-foreground dark:hover:text-muted-foreground"
             >
-              <Smartphone className="size-3 text-sky-500" />
+              <Smartphone className="size-3 text-foreground" />
               <span>+ Mobile App</span>
             </Button>
             <Button
@@ -206,9 +203,9 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
               variant="secondary"
               size="sm"
               onClick={() => handleAddTemplate("qa")}
-              className="h-7 text-xs gap-1 px-2 hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300"
+              className="h-7 text-xs gap-1 px-2 hover:bg-muted hover:text-foreground dark:hover:text-muted-foreground"
             >
-              <CheckCircle2 className="size-3 text-emerald-500" />
+              <CheckCircle2 className="size-3 text-foreground" />
               <span>+ QA & Testing</span>
             </Button>
             <Button
@@ -216,9 +213,9 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
               variant="secondary"
               size="sm"
               onClick={() => handleAddTemplate("devops")}
-              className="h-7 text-xs gap-1 px-2 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300"
+              className="h-7 text-xs gap-1 px-2 hover:bg-warning/15 hover:text-warning dark:hover:text-warning"
             >
-              <Rocket className="size-3 text-amber-500" />
+              <Rocket className="size-3 text-warning" />
               <span>+ DevOps & Cloud</span>
             </Button>
           </div>
@@ -228,7 +225,8 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
         <div className="space-y-4">
           {phases.length === 0 ? (
             <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-              No phases defined yet. Click any of the quick-add buttons above or "+ Blank Phase" below.
+              No phases defined yet. Click any of the quick-add buttons above or "+ Blank Phase"
+              below.
             </div>
           ) : (
             phases.map((phase) => (
@@ -238,6 +236,8 @@ export const CalculatorPhases = React.memo(function CalculatorPhases({
                 employees={employees}
                 rateFor={rateFor}
                 currency={currency}
+                hoursPerDay={hoursPerDay}
+                hoursPerMonth={hoursPerMonth}
                 onUpdatePhaseName={onUpdatePhaseName}
                 onRemovePhase={onRemovePhase}
                 onAddAllocation={onAddAllocation}

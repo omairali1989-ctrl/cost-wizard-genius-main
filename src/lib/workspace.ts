@@ -28,6 +28,17 @@ export interface TeamRate {
   hourly_cost: number;
 }
 
+const SAFE_DEFAULT_POLICY: CostPolicy = {
+  working_days_per_year: 220,
+  hours_per_day: 8,
+  default_utilization_pct: 75,
+  default_contingency_pct: 10,
+  default_margin_pct: 25,
+  default_markup_pct: 35,
+  pricing_mode: "margin",
+  rounding_step: 100,
+};
+
 export const useSession = () => {
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,18 +73,29 @@ export const fetchWorkspace = async (): Promise<WorkspaceData | null> => {
   let roles: string[] = [];
 
   if (profile?.company_id) {
-    const [{ data: companyRow }, { data: policyRow }, { data: roleRows }] = await Promise.all([
+    const [{ data: companyRow }, policyResult, { data: roleRows }] = await Promise.all([
       supabase
         .from("companies")
         .select("id, name, industry, currency")
         .eq("id", profile.company_id)
         .maybeSingle(),
-      supabase.from("cost_policies").select("*").eq("company_id", profile.company_id).maybeSingle(),
+      supabase.rpc("company_policy"),
       supabase.from("user_roles").select("role").eq("user_id", user.id),
     ]);
     company = companyRow ?? null;
-    policy = (policyRow as unknown as CostPolicy) ?? null;
+    policy = ((policyResult.data as unknown as CostPolicy[] | null)?.[0] ??
+      null) as CostPolicy | null;
     roles = (roleRows ?? []).map((r) => r.role as string);
+    if (!policy && policyResult.error && roles.some((role) => FINANCE_VIEW_ROLES.includes(role))) {
+      // Compatibility fallback for deployments before the policy RPC migration.
+      const { data: legacyPolicy } = await supabase
+        .from("cost_policies")
+        .select("*")
+        .eq("company_id", profile.company_id)
+        .maybeSingle();
+      policy = (legacyPolicy as unknown as CostPolicy) ?? null;
+    }
+    policy ??= SAFE_DEFAULT_POLICY;
   }
 
   const has = (list: string[]) => roles.some((r) => list.includes(r));
@@ -160,11 +182,32 @@ export interface ScopeFeatureRecord {
   label: string;
   description: string;
   effort: {
-    low: { designer: number; frontend: number; backend: number; mobile: number; pm: number; qa: number };
-    medium: { designer: number; frontend: number; backend: number; mobile: number; pm: number; qa: number };
-    high: { designer: number; frontend: number; backend: number; mobile: number; pm: number; qa: number };
+    low: {
+      designer: number;
+      frontend: number;
+      backend: number;
+      mobile: number;
+      pm: number;
+      qa: number;
+    };
+    medium: {
+      designer: number;
+      frontend: number;
+      backend: number;
+      mobile: number;
+      pm: number;
+      qa: number;
+    };
+    high: {
+      designer: number;
+      frontend: number;
+      backend: number;
+      mobile: number;
+      pm: number;
+      qa: number;
+    };
   };
-  icon: string;
+  icon?: string;
   tags: string[];
   sort_order: number;
   is_custom: boolean;
@@ -185,6 +228,71 @@ export const useScopeFeatures = (companyId?: string) =>
         return [];
       }
       return (data ?? []) as ScopeFeatureRecord[];
+    },
+  });
+
+/**
+ * Workspace overrides for the AI productivity matrix. Absent rows fall back to the
+ * built-in defaults, so an empty table is a valid, fully-working configuration.
+ */
+export const useAiFactors = (companyId?: string) =>
+  useQuery({
+    queryKey: ["ai-factors", companyId],
+    enabled: !!companyId,
+    queryFn: async (): Promise<Record<string, number>> => {
+      const { data, error } = await supabase
+        .from("ai_productivity_factors")
+        .select("activity_kind, reduction_pct")
+        .eq("company_id", companyId!);
+      if (error) {
+        // The table arrives with a migration; until then every workspace uses defaults.
+        console.warn("Falling back to default AI productivity factors:", error.message);
+        return {};
+      }
+      return Object.fromEntries(
+        (data ?? []).map((row) => [
+          (row as { activity_kind: string }).activity_kind,
+          Number((row as { reduction_pct: number }).reduction_pct),
+        ]),
+      );
+    },
+  });
+
+export const useFeatureTasks = (companyId?: string) =>
+  useQuery({
+    queryKey: ["feature-tasks", companyId],
+    enabled: !!companyId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("feature_tasks")
+        .select("*")
+        .is("archived_at", null)
+        .order("sort_order", { ascending: true });
+      if (error) {
+        console.warn("Failed to fetch feature tasks:", error.message);
+        return [];
+      }
+      return data ?? [];
+    },
+  });
+
+/** Tenant commission rules; an empty table simply means no commission applies. */
+export const useCommissionRules = (companyId?: string) =>
+  useQuery({
+    queryKey: ["commission-rules", companyId],
+    enabled: !!companyId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("commission_rules")
+        .select("*")
+        .eq("company_id", companyId!)
+        .order("scope", { ascending: true });
+      if (error) {
+        // The table arrives with a migration; until then there are no rules to apply.
+        console.warn("Commission rules unavailable:", error.message);
+        return [];
+      }
+      return data ?? [];
     },
   });
 

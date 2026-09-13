@@ -11,11 +11,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { logActivity, useScopeFeatures, type ScopeFeatureRecord } from "@/lib/workspace";
+import { downloadCsv } from "@/lib/csv";
 import {
   FEATURE_LIBRARY,
   type FeatureCategory,
@@ -40,27 +40,54 @@ import {
   Layers,
   ArrowRight,
 } from "lucide-react";
+import { CategoryGlyph } from "./CategoryGlyph";
 
-const CATEGORIES: { key: FeatureCategory | "all"; label: string; icon: string }[] = [
-  { key: "all", label: "All Categories", icon: "🌐" },
-  { key: "discovery", label: "Discovery & Strategy", icon: "🔍" },
-  { key: "design", label: "UI/UX Design", icon: "🎨" },
-  { key: "frontend", label: "Frontend & Web", icon: "💻" },
-  { key: "backend", label: "Backend & APIs", icon: "⚙️" },
-  { key: "mobile", label: "Mobile Apps", icon: "📱" },
-  { key: "ecommerce", label: "E-Commerce", icon: "🛒" },
-  { key: "integration", label: "Integrations & SaaS", icon: "🔌" },
-  { key: "devops", label: "DevOps & Cloud", icon: "☁️" },
-  { key: "testing", label: "QA & Testing", icon: "🧪" },
-  { key: "cms", label: "CMS & Portals", icon: "📰" },
-  { key: "social", label: "Social & Marketing", icon: "📣" },
+const FEATURE_CSV_COLUMNS = [
+  "id",
+  "category",
+  "label",
+  "description",
+  "tags",
+  "lowEffort",
+  "mediumEffort",
+  "highEffort",
+] as const;
+
+/** One row per feature; the three effort tiers ride along as JSON cells. */
+function featuresToCsvRows(list: ScopeFeatureRecord[]) {
+  const tier = (effort: ScopeFeatureRecord["effort"], key: string) =>
+    JSON.stringify((effort as Record<string, unknown> | null)?.[key] ?? {});
+  return list.map((f) => ({
+    id: f.id,
+    category: f.category,
+    label: f.label,
+    description: f.description ?? "",
+    tags: Array.isArray(f.tags) ? f.tags.join("; ") : "",
+    lowEffort: tier(f.effort, "low"),
+    mediumEffort: tier(f.effort, "medium"),
+    highEffort: tier(f.effort, "high"),
+  }));
+}
+
+const CATEGORIES: { key: FeatureCategory | "all"; label: string }[] = [
+  { key: "all", label: "All Categories" },
+  { key: "discovery", label: "Discovery & Strategy" },
+  { key: "design", label: "UI/UX Design" },
+  { key: "frontend", label: "Frontend & Web" },
+  { key: "backend", label: "Backend & APIs" },
+  { key: "mobile", label: "Mobile Apps" },
+  { key: "ecommerce", label: "E-Commerce" },
+  { key: "integration", label: "Integrations & SaaS" },
+  { key: "devops", label: "DevOps & Cloud" },
+  { key: "testing", label: "QA & Testing" },
+  { key: "cms", label: "CMS & Portals" },
+  { key: "social", label: "Social & Marketing" },
 ];
 
 const createManualForm = () => ({
   label: "",
   category: "frontend" as FeatureCategory,
   description: "",
-  icon: "⚡",
   tags: "",
   designer: 4,
   frontend: 16,
@@ -78,48 +105,48 @@ const STANDARD_FEATURES: ScopeFeatureRecord[] = FEATURE_LIBRARY.map((feature, in
 }));
 
 const SAMPLE_TEMPLATE_JSON = `[
-  {
-    "category": "frontend",
-    "label": "Interactive Analytics Dashboard",
-    "description": "Custom analytics dashboard with KPI cards, filtering, and exportable charts",
-    "icon": "📊",
-    "tags": ["dashboard", "analytics", "charts", "kpi"],
-    "effort": {
-      "designer": 6,
-      "frontend": 24,
-      "backend": 12,
-      "mobile": 0,
-      "pm": 4,
-      "qa": 6
-    }
-  },
-  {
-    "category": "backend",
-    "label": "Stripe Subscriptions & Invoicing",
-    "description": "Recurring subscription billing, customer portal, webhook handlers, and invoice emails",
-    "icon": "💳",
-    "tags": ["billing", "stripe", "payments", "subscriptions"],
-    "effort": {
-      "low":    { "designer": 0, "frontend": 8,  "backend": 16, "mobile": 0, "pm": 2, "qa": 4 },
-      "medium": { "designer": 2, "frontend": 16, "backend": 32, "mobile": 0, "pm": 4, "qa": 8 },
-      "high":   { "designer": 4, "frontend": 32, "backend": 64, "mobile": 0, "pm": 8, "qa": 16 }
-    }
-  },
-  {
-    "category": "mobile",
-    "label": "Biometric Authentication & Push Notifications",
-    "description": "FaceID / fingerprint login and Firebase Cloud Messaging for iOS and Android",
-    "icon": "📱",
-    "tags": ["mobile", "auth", "security", "push"],
-    "effort": {
-      "designer": 2,
-      "frontend": 0,
-      "backend": 8,
-      "mobile": 20,
-      "pm": 3,
-      "qa": 6
-    }
-  }
+ {
+ "category": "frontend",
+ "label": "Interactive Analytics Dashboard",
+ "description": "Custom analytics dashboard with KPI cards, filtering, and exportable charts",
+ "icon": "",
+ "tags": ["dashboard", "analytics", "charts", "kpi"],
+ "effort": {
+ "designer": 6,
+ "frontend": 24,
+ "backend": 12,
+ "mobile": 0,
+ "pm": 4,
+ "qa": 6
+ }
+ },
+ {
+ "category": "backend",
+ "label": "Stripe Subscriptions & Invoicing",
+ "description": "Recurring subscription billing, customer portal, webhook handlers, and invoice emails",
+ "icon": "",
+ "tags": ["billing", "stripe", "payments", "subscriptions"],
+ "effort": {
+ "low": { "designer": 0, "frontend": 8, "backend": 16, "mobile": 0, "pm": 2, "qa": 4 },
+ "medium": { "designer": 2, "frontend": 16, "backend": 32, "mobile": 0, "pm": 4, "qa": 8 },
+ "high": { "designer": 4, "frontend": 32, "backend": 64, "mobile": 0, "pm": 8, "qa": 16 }
+ }
+ },
+ {
+ "category": "mobile",
+ "label": "Biometric Authentication & Push Notifications",
+ "description": "FaceID / fingerprint login and Firebase Cloud Messaging for iOS and Android",
+ "icon": "",
+ "tags": ["mobile", "auth", "security", "push"],
+ "effort": {
+ "designer": 2,
+ "frontend": 0,
+ "backend": 8,
+ "mobile": 20,
+ "pm": 3,
+ "qa": 6
+ }
+ }
 ]`;
 
 interface FeatureLibraryManagerProps {
@@ -142,7 +169,7 @@ export function FeatureLibraryManager({
     return [...STANDARD_FEATURES.filter((feature) => !databaseIds.has(feature.id)), ...dbFeatures];
   }, [dbFeatures]);
 
-  const [activeTab, setActiveTab] = useState<"manage" | "import" | "export">("manage");
+  const [showTransfer, setShowTransfer] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<FeatureCategory | "all">("all");
   const [filterCustomOnly, setFilterCustomOnly] = useState<"all" | "custom" | "standard">("all");
@@ -193,7 +220,7 @@ export function FeatureLibraryManager({
   const handleCopyTemplate = useCallback(() => {
     navigator.clipboard.writeText(SAMPLE_TEMPLATE_JSON);
     setCopiedTemplate(true);
-    toast.success("📋 Sample JSON template copied to clipboard!");
+    toast.success("Sample JSON template copied to clipboard!");
     setTimeout(() => setCopiedTemplate(false), 2000);
   }, []);
 
@@ -206,7 +233,7 @@ export function FeatureLibraryManager({
     a.download = "costcraft-features-template.json";
     a.click();
     URL.revokeObjectURL(url);
-    toast.success("⬇️ Template file downloaded: costcraft-features-template.json");
+    toast.success("Template file downloaded: costcraft-features-template.json");
   }, []);
 
   // Validate JSON string
@@ -330,13 +357,13 @@ export function FeatureLibraryManager({
           : [];
 
       const record: Partial<ScopeFeatureRecord> = {
-        id: item.id || `feat-custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: item.id || `feat-custom-${crypto.randomUUID()}`,
         company_id: companyId ?? null,
         category: finalCategory,
         label: item.label.trim(),
         description: item.description?.trim() || "",
         effort: effortObj,
-        icon: item.icon || "⚡",
+        icon: item.icon || "",
         tags: tagsArray,
         sort_order: 999,
         is_custom: true,
@@ -350,7 +377,7 @@ export function FeatureLibraryManager({
       toast.error(`Found ${errors.length} errors in your JSON.`);
     } else {
       setParsedItems(validRecords);
-      toast.success(`✓ All ${validRecords.length} features parsed and valid! Ready to import.`);
+      toast.success(`All ${validRecords.length} features parsed and valid! Ready to import.`);
     }
   }, [jsonText, companyId]);
 
@@ -378,7 +405,7 @@ export function FeatureLibraryManager({
     }
     setIsImporting(true);
     try {
-      const { error } = await supabase.from("scope_features").insert(parsedItems);
+      const { error } = await supabase.from("scope_features").upsert(parsedItems);
       if (error) throw error;
 
       await logActivity(companyId, "created", "scope_feature", null, {
@@ -386,10 +413,10 @@ export function FeatureLibraryManager({
         source: "json_import",
       });
       await queryClient.invalidateQueries({ queryKey: ["scope-features"] });
-      toast.success(`🎉 Successfully imported ${parsedItems.length} features into your library!`);
+      toast.success(`Imported ${parsedItems.length} features into your library.`);
       setJsonText("");
       setParsedItems(null);
-      setActiveTab("manage");
+      setShowTransfer(false);
     } catch (err: any) {
       console.error("Import failed:", err);
       toast.error(`Import failed: ${err.message || "Database error"}`);
@@ -428,7 +455,6 @@ export function FeatureLibraryManager({
       label: feature.label,
       category: feature.category as FeatureCategory,
       description: feature.description ?? "",
-      icon: feature.icon ?? "⚡",
       tags: (feature.tags ?? []).join(", "),
       designer: Number(mediumEffort.designer) || 0,
       frontend: Number(mediumEffort.frontend) || 0,
@@ -496,7 +522,6 @@ export function FeatureLibraryManager({
         label: manualForm.label.trim(),
         description: manualForm.description.trim(),
         effort: effortObj,
-        icon: manualForm.icon.trim() || "⚡",
         tags,
         sort_order: 999,
         is_custom: true,
@@ -529,8 +554,8 @@ export function FeatureLibraryManager({
       await queryClient.invalidateQueries({ queryKey: ["scope-features"] });
       toast.success(
         editingFeature
-          ? `✨ Feature "${manualForm.label}" updated in the library!`
-          : `✨ Feature "${manualForm.label}" saved to library!`,
+          ? `Feature "${manualForm.label}" updated in the library!`
+          : `Feature "${manualForm.label}" saved to library!`,
       );
       setShowAddForm(false);
       setEditingFeature(null);
@@ -543,6 +568,8 @@ export function FeatureLibraryManager({
   };
 
   // Export all features as formatted JSON
+  const csvRows = useMemo(() => featuresToCsvRows(features), [features]);
+
   const exportJsonContent = useMemo(() => {
     const clean = features.map((f) => ({
       category: f.category,
@@ -558,7 +585,7 @@ export function FeatureLibraryManager({
   const handleCopyExport = useCallback(() => {
     navigator.clipboard.writeText(exportJsonContent);
     setCopiedExport(true);
-    toast.success("📋 Export JSON copied to clipboard!");
+    toast.success("Export JSON copied to clipboard!");
     setTimeout(() => setCopiedExport(false), 2000);
   }, [exportJsonContent]);
 
@@ -570,23 +597,20 @@ export function FeatureLibraryManager({
     a.download = `costcraft-feature-library-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success("⬇️ Feature library exported as JSON!");
+    toast.success("Feature library exported as JSON!");
   }, [exportJsonContent]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
         {/* Header */}
-        <div className="p-5 border-b bg-gradient-to-r from-violet-500/10 via-card to-background">
+        <div className="p-5 border-b via-card to-background">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <DialogTitle className="font-display font-bold text-xl flex items-center gap-2">
-                <BookOpen className="size-5 text-violet-600" />
+                <BookOpen className="size-5 text-foreground" />
                 <span>Software Scope Blueprint Library</span>
-                <Badge
-                  variant="outline"
-                  className="text-xs bg-violet-500/10 text-violet-600 border-violet-200"
-                >
+                <Badge variant="outline" className="text-xs bg-muted text-foreground border-border">
                   {stats.total} Features
                 </Badge>
               </DialogTitle>
@@ -600,46 +624,25 @@ export function FeatureLibraryManager({
               <span className="px-2.5 py-1 rounded-md bg-muted text-muted-foreground font-mono">
                 {stats.standard} Standard
               </span>
-              <span className="px-2.5 py-1 rounded-md bg-violet-500/10 text-violet-700 dark:text-violet-300 font-mono font-semibold">
+              <span className="px-2.5 py-1 rounded-md bg-muted text-foreground dark:text-muted-foreground font-mono font-semibold">
                 {stats.custom} Custom
               </span>
             </div>
           </div>
         </div>
 
-        {/* Tabs */}
-        <Tabs
-          value={activeTab}
-          onValueChange={(v) => setActiveTab(v as any)}
-          className="flex-1 flex flex-col min-h-0"
-        >
-          <div className="px-5 pt-3 border-b bg-muted/20">
-            <TabsList className="grid grid-cols-3 max-w-md h-9">
-              <TabsTrigger value="manage" className="text-xs font-semibold gap-1.5">
-                <Layers className="size-3.5" />
-                <span>Browse & Edit ({stats.total})</span>
-              </TabsTrigger>
-              <TabsTrigger value="import" className="text-xs font-semibold gap-1.5">
-                <Upload className="size-3.5" />
-                <span>Import JSON</span>
-              </TabsTrigger>
-              <TabsTrigger value="export" className="text-xs font-semibold gap-1.5">
-                <Download className="size-3.5" />
-                <span>Export JSON</span>
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          {/* ════ TAB 1: BROWSE & MANAGE ════ */}
-          <TabsContent
-            value="manage"
-            className="flex-1 flex flex-col min-h-0 p-5 gap-4 data-[state=inactive]:hidden m-0"
+        {/* Everything on one page — browse, edit and archive without switching tabs */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+          <section
+            aria-label="Browse and edit features"
+            className="flex flex-col min-h-0 p-5 gap-4"
           >
             {/* Search and Filters */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
                 <Input
+                  aria-label="Search features"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search features by name, description, tags..."
@@ -649,6 +652,7 @@ export function FeatureLibraryManager({
 
               <div className="flex items-center gap-2 shrink-0">
                 <select
+                  aria-label="Filter features"
                   value={filterCustomOnly}
                   onChange={(e) => setFilterCustomOnly(e.target.value as any)}
                   className="h-8 rounded-md border border-input bg-background px-2.5 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -660,6 +664,29 @@ export function FeatureLibraryManager({
 
                 <Button
                   size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5 text-xs font-semibold"
+                  onClick={() =>
+                    downloadCsv("scope-features.csv", csvRows, [...FEATURE_CSV_COLUMNS])
+                  }
+                >
+                  <Download className="size-3.5" aria-hidden="true" />
+                  CSV
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5 text-xs font-semibold"
+                  aria-expanded={showTransfer}
+                  onClick={() => setShowTransfer((v) => !v)}
+                >
+                  <Upload className="size-3.5" aria-hidden="true" />
+                  Import / Export
+                </Button>
+
+                <Button
+                  size="sm"
                   onClick={() => {
                     setEditingFeature(null);
                     setManualForm(createManualForm());
@@ -667,9 +694,10 @@ export function FeatureLibraryManager({
                   }}
                   disabled={!canManage || !companyId}
                   title={!canManage ? "Only cost managers can add features" : undefined}
-                  className="h-8 gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold"
+                  className="h-8 gap-1.5 text-xs font-semibold"
                 >
-                  <Plus className="size-3.5" /> Add Feature
+                  <Plus className="size-3.5" aria-hidden="true" />
+                  Add Feature
                 </Button>
               </div>
             </div>
@@ -682,11 +710,11 @@ export function FeatureLibraryManager({
                   onClick={() => setSelectedCategory(c.key)}
                   className={`px-2.5 py-1 rounded-full text-xs font-medium shrink-0 border transition-colors cursor-pointer ${
                     selectedCategory === c.key
-                      ? "bg-violet-600 text-white border-violet-600 shadow-xs"
+                      ? "bg-primary text-white border-border shadow-xs"
                       : "bg-card text-muted-foreground border-border hover:bg-muted"
                   }`}
                 >
-                  {c.icon} {c.label}
+                  {c.label}
                 </button>
               ))}
             </div>
@@ -721,12 +749,12 @@ export function FeatureLibraryManager({
                     return (
                       <div
                         key={f.id}
-                        className="rounded-lg border p-3 hover:border-violet-300 dark:hover:border-violet-700 transition-all bg-background/50 flex flex-col justify-between gap-2"
+                        className="rounded-lg border p-3 hover:border-border dark:hover:border-border transition-all bg-background/50 flex flex-col justify-between gap-2"
                       >
                         <div>
                           <div className="flex items-start justify-between gap-2 mb-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-base">{f.icon}</span>
+                              <CategoryGlyph category={f.category} />
                               <h4 className="font-display font-semibold text-xs leading-tight">
                                 {f.label}
                               </h4>
@@ -734,7 +762,7 @@ export function FeatureLibraryManager({
                             {f.is_custom ? (
                               <Badge
                                 variant="secondary"
-                                className="text-[10px] h-4 bg-violet-500/10 text-violet-600 font-bold"
+                                className="text-[10px] h-4 bg-muted text-foreground font-bold"
                               >
                                 Custom
                               </Badge>
@@ -759,27 +787,27 @@ export function FeatureLibraryManager({
                           <div className="flex flex-wrap gap-1">
                             {mediumEffort.designer ? (
                               <span className="bg-muted px-1.5 py-0.5 rounded font-mono">
-                                🎨 {mediumEffort.designer}h
+                                {mediumEffort.designer}h
                               </span>
                             ) : null}
                             {mediumEffort.frontend ? (
                               <span className="bg-muted px-1.5 py-0.5 rounded font-mono">
-                                💻 {mediumEffort.frontend}h
+                                {mediumEffort.frontend}h
                               </span>
                             ) : null}
                             {mediumEffort.backend ? (
                               <span className="bg-muted px-1.5 py-0.5 rounded font-mono">
-                                ⚙️ {mediumEffort.backend}h
+                                {mediumEffort.backend}h
                               </span>
                             ) : null}
                             {mediumEffort.mobile ? (
                               <span className="bg-muted px-1.5 py-0.5 rounded font-mono">
-                                📱 {mediumEffort.mobile}h
+                                {mediumEffort.mobile}h
                               </span>
                             ) : null}
                             {mediumEffort.qa ? (
                               <span className="bg-muted px-1.5 py-0.5 rounded font-mono">
-                                🧪 {mediumEffort.qa}h
+                                {mediumEffort.qa}h
                               </span>
                             ) : null}
                           </div>
@@ -793,7 +821,7 @@ export function FeatureLibraryManager({
                                 <button
                                   onClick={() => handleEditFeature(f)}
                                   disabled={!canManage || !companyId}
-                                  className="p-1 text-violet-600 hover:bg-violet-500/10 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="p-1 text-foreground hover:bg-muted rounded transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                                   title="Edit custom feature"
                                 >
                                   <Pencil className="size-3" />
@@ -802,7 +830,7 @@ export function FeatureLibraryManager({
                                 <button
                                   onClick={() => void handleDeleteFeature(f.id, f.label)}
                                   disabled={!canManage || !companyId}
-                                  className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="p-1 text-destructive hover:bg-destructive/10 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                                   title="Delete custom feature"
                                 >
                                   <Trash2 className="size-3" />
@@ -818,18 +846,18 @@ export function FeatureLibraryManager({
                 </div>
               )}
             </ScrollArea>
-          </TabsContent>
+          </section>
 
-          {/* ════ TAB 2: IMPORT JSON ════ */}
-          <TabsContent
-            value="import"
-            className="flex-1 flex flex-col min-h-0 p-5 gap-4 data-[state=inactive]:hidden m-0"
+          <section
+            aria-label="Import features"
+            hidden={!showTransfer}
+            className="flex flex-col min-h-0 border-t p-5 gap-4"
           >
             {/* Format Instructions & Actions */}
             <div className="rounded-xl border bg-muted/40 p-3.5 space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <FileCode2 className="size-4 text-violet-600" />
+                  <FileCode2 className="size-4 text-foreground" />
                   <span className="text-xs font-bold text-foreground">
                     JSON Schema & Format Specification
                   </span>
@@ -842,7 +870,7 @@ export function FeatureLibraryManager({
                     className="h-7 text-xs gap-1"
                   >
                     {copiedTemplate ? (
-                      <Check className="size-3 text-emerald-600" />
+                      <Check className="size-3 text-foreground" />
                     ) : (
                       <Copy className="size-3" />
                     )}
@@ -873,7 +901,7 @@ export function FeatureLibraryManager({
             <div className="flex-1 flex flex-col min-h-0 space-y-2">
               <div className="flex items-center justify-between text-xs font-medium">
                 <span>Paste Features JSON or upload a file:</span>
-                <label className="cursor-pointer text-violet-600 hover:text-violet-700 font-semibold flex items-center gap-1">
+                <label className="cursor-pointer text-foreground hover:text-foreground font-semibold flex items-center gap-1">
                   <Upload className="size-3" />
                   <span>Choose .json file</span>
                   <input
@@ -886,6 +914,7 @@ export function FeatureLibraryManager({
               </div>
 
               <Textarea
+                aria-label="Features JSON to import"
                 value={jsonText}
                 onChange={(e) => {
                   setJsonText(e.target.value);
@@ -900,7 +929,7 @@ export function FeatureLibraryManager({
             {/* Validation Feedback & Action Buttons */}
             <div className="space-y-2">
               {validationErrors.length > 0 && (
-                <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-600 dark:text-red-400 space-y-1">
+                <div className="p-3 rounded-lg border border-destructive bg-destructive/10 text-xs text-destructive dark:text-destructive space-y-1">
                   <div className="flex items-center gap-1.5 font-bold">
                     <AlertCircle className="size-4" />
                     <span>Validation Errors ({validationErrors.length})</span>
@@ -914,11 +943,11 @@ export function FeatureLibraryManager({
               )}
 
               {parsedItems && parsedItems.length > 0 && (
-                <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-700 dark:text-emerald-300 flex items-center justify-between">
+                <div className="p-3 rounded-lg border border-border bg-muted text-xs text-foreground dark:text-muted-foreground flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="size-4" />
                     <span className="font-semibold">
-                      ✓ Validated {parsedItems.length} features ready for import!
+                      Validated {parsedItems.length} features ready for import!
                     </span>
                   </div>
                   <span className="text-[11px] font-mono">
@@ -934,7 +963,7 @@ export function FeatureLibraryManager({
                   onClick={handleValidateJson}
                   className="gap-1.5"
                 >
-                  <Sparkles className="size-3.5 text-violet-600" />
+                  <Sparkles className="size-3.5 text-foreground" />
                   <span>Validate & Preview JSON</span>
                 </Button>
 
@@ -949,7 +978,7 @@ export function FeatureLibraryManager({
                   }
                   onClick={handleExecuteImport}
                   title={!canManage ? "Only cost managers can import features" : undefined}
-                  className="gap-1.5 bg-violet-600 hover:bg-violet-700 text-white font-semibold"
+                  className="gap-1.5 bg-primary hover:bg-primary text-white font-semibold"
                 >
                   <Upload className="size-3.5" />
                   <span>
@@ -960,16 +989,16 @@ export function FeatureLibraryManager({
                 </Button>
               </div>
             </div>
-          </TabsContent>
+          </section>
 
-          {/* ════ TAB 3: EXPORT JSON ════ */}
-          <TabsContent
-            value="export"
-            className="flex-1 flex flex-col min-h-0 p-5 gap-4 data-[state=inactive]:hidden m-0"
+          <section
+            aria-label="Export features"
+            hidden={!showTransfer}
+            className="flex flex-col min-h-0 border-t p-5 gap-4"
           >
             <div className="rounded-xl border bg-muted/40 p-3.5 space-y-2">
               <div className="flex items-center gap-2">
-                <Download className="size-4 text-violet-600" />
+                <Download className="size-4 text-foreground" />
                 <span className="text-xs font-bold text-foreground">Export Library as JSON</span>
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
@@ -990,7 +1019,7 @@ export function FeatureLibraryManager({
                     className="h-7 text-xs gap-1"
                   >
                     {copiedExport ? (
-                      <Check className="size-3 text-emerald-600" />
+                      <Check className="size-3 text-foreground" />
                     ) : (
                       <Copy className="size-3" />
                     )}
@@ -999,7 +1028,7 @@ export function FeatureLibraryManager({
                   <Button
                     size="sm"
                     onClick={handleDownloadExport}
-                    className="h-7 text-xs gap-1 bg-violet-600 hover:bg-violet-700 text-white"
+                    className="h-7 text-xs gap-1 bg-primary hover:bg-primary text-white"
                   >
                     <Download className="size-3" />
                     <span>Download JSON File</span>
@@ -1009,12 +1038,13 @@ export function FeatureLibraryManager({
 
               <Textarea
                 readOnly
+                aria-label="Exported features JSON"
                 value={exportJsonContent}
                 className="flex-1 font-mono text-xs p-3 leading-relaxed resize-none border-border bg-muted/20"
               />
             </div>
-          </TabsContent>
-        </Tabs>
+          </section>
+        </div>
 
         {/* Modal: Manual Add Single Feature */}
         {showAddForm && (
@@ -1023,9 +1053,9 @@ export function FeatureLibraryManager({
               <div className="flex items-center justify-between pb-2 border-b">
                 <h3 className="font-display font-bold text-base flex items-center gap-2">
                   {editingFeature ? (
-                    <Pencil className="size-4 text-violet-600" />
+                    <Pencil className="size-4 text-foreground" />
                   ) : (
-                    <Plus className="size-4 text-violet-600" />
+                    <Plus className="size-4 text-foreground" />
                   )}
                   <span>{editingFeature ? "Edit Custom Feature" : "Add Feature to Library"}</span>
                 </h3>
@@ -1035,9 +1065,7 @@ export function FeatureLibraryManager({
                     setEditingFeature(null);
                   }}
                   className="text-muted-foreground hover:text-foreground text-xs"
-                >
-                  ✕
-                </button>
+                ></button>
               </div>
 
               <form onSubmit={handleSaveManualFeature} className="space-y-3">
@@ -1045,20 +1073,12 @@ export function FeatureLibraryManager({
                   <div className="col-span-2 space-y-1">
                     <label className="text-xs font-medium">Feature Label *</label>
                     <Input
+                      aria-label="Feature Label"
                       value={manualForm.label}
                       onChange={(e) => setManualForm({ ...manualForm, label: e.target.value })}
                       placeholder="e.g. Stripe Checkout Gateway"
                       className="h-8 text-xs"
                       required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">Icon (Emoji)</label>
-                    <Input
-                      value={manualForm.icon}
-                      onChange={(e) => setManualForm({ ...manualForm, icon: e.target.value })}
-                      placeholder="💳"
-                      className="h-8 text-xs"
                     />
                   </div>
                 </div>
@@ -1067,6 +1087,7 @@ export function FeatureLibraryManager({
                   <div className="space-y-1">
                     <label className="text-xs font-medium">Category</label>
                     <select
+                      aria-label="Category"
                       value={manualForm.category}
                       onChange={(e) =>
                         setManualForm({ ...manualForm, category: e.target.value as any })
@@ -1075,7 +1096,7 @@ export function FeatureLibraryManager({
                     >
                       {CATEGORIES.filter((c) => c.key !== "all").map((c) => (
                         <option key={c.key} value={c.key}>
-                          {c.icon} {c.label}
+                          {c.label}
                         </option>
                       ))}
                     </select>
@@ -1083,6 +1104,7 @@ export function FeatureLibraryManager({
                   <div className="space-y-1">
                     <label className="text-xs font-medium">Tags (comma separated)</label>
                     <Input
+                      aria-label="Tags (comma separated)"
                       value={manualForm.tags}
                       onChange={(e) => setManualForm({ ...manualForm, tags: e.target.value })}
                       placeholder="billing, stripe, webhook"
@@ -1094,6 +1116,7 @@ export function FeatureLibraryManager({
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Description</label>
                   <Textarea
+                    aria-label="Description"
                     value={manualForm.description}
                     onChange={(e) => setManualForm({ ...manualForm, description: e.target.value })}
                     placeholder="Brief description of requirements and scope..."
@@ -1107,8 +1130,9 @@ export function FeatureLibraryManager({
                   </span>
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div>
-                      <span className="text-muted-foreground text-[10px]">🎨 Designer (h)</span>
+                      <span className="text-muted-foreground text-[10px]">Designer (h)</span>
                       <Input
+                        aria-label="Designer (h)"
                         type="number"
                         value={manualForm.designer}
                         onChange={(e) =>
@@ -1118,8 +1142,9 @@ export function FeatureLibraryManager({
                       />
                     </div>
                     <div>
-                      <span className="text-muted-foreground text-[10px]">💻 Frontend (h)</span>
+                      <span className="text-muted-foreground text-[10px]">Frontend (h)</span>
                       <Input
+                        aria-label="Frontend (h)"
                         type="number"
                         value={manualForm.frontend}
                         onChange={(e) =>
@@ -1129,8 +1154,9 @@ export function FeatureLibraryManager({
                       />
                     </div>
                     <div>
-                      <span className="text-muted-foreground text-[10px]">⚙️ Backend (h)</span>
+                      <span className="text-muted-foreground text-[10px]">Backend (h)</span>
                       <Input
+                        aria-label="Backend (h)"
                         type="number"
                         value={manualForm.backend}
                         onChange={(e) =>
@@ -1140,8 +1166,9 @@ export function FeatureLibraryManager({
                       />
                     </div>
                     <div>
-                      <span className="text-muted-foreground text-[10px]">📱 Mobile (h)</span>
+                      <span className="text-muted-foreground text-[10px]">Mobile (h)</span>
                       <Input
+                        aria-label="Mobile (h)"
                         type="number"
                         value={manualForm.mobile}
                         onChange={(e) =>
@@ -1151,8 +1178,9 @@ export function FeatureLibraryManager({
                       />
                     </div>
                     <div>
-                      <span className="text-muted-foreground text-[10px]">📋 PM (h)</span>
+                      <span className="text-muted-foreground text-[10px]">PM (h)</span>
                       <Input
+                        aria-label="PM (h)"
                         type="number"
                         value={manualForm.pm}
                         onChange={(e) =>
@@ -1162,8 +1190,9 @@ export function FeatureLibraryManager({
                       />
                     </div>
                     <div>
-                      <span className="text-muted-foreground text-[10px]">🧪 QA (h)</span>
+                      <span className="text-muted-foreground text-[10px]">QA (h)</span>
                       <Input
+                        aria-label="QA (h)"
                         type="number"
                         value={manualForm.qa}
                         onChange={(e) =>
@@ -1191,7 +1220,7 @@ export function FeatureLibraryManager({
                     type="submit"
                     size="sm"
                     disabled={isSavingManual}
-                    className="bg-violet-600 hover:bg-violet-700 text-white font-semibold"
+                    className="bg-primary hover:bg-primary text-white font-semibold"
                   >
                     {isSavingManual
                       ? editingFeature

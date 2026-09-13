@@ -49,7 +49,7 @@ function ScopeBlueprints({ workspace }: { workspace: WorkspaceData }) {
         <Card className="md:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 font-display text-base">
-              <BookOpen className="size-5 text-violet-600" />
+              <BookOpen className="size-5 text-foreground" />
               Company blueprint library
             </CardTitle>
           </CardHeader>
@@ -60,17 +60,17 @@ function ScopeBlueprints({ workspace }: { workspace: WorkspaceData }) {
             </p>
             <div className="grid gap-2 sm:grid-cols-3">
               <div className="rounded-lg border bg-muted/30 p-3">
-                <Plus className="mb-2 size-4 text-violet-600" />
+                <Plus className="mb-2 size-4 text-foreground" />
                 <p className="font-medium text-foreground">Add</p>
                 <p className="mt-1 text-xs">Create a company-specific feature blueprint.</p>
               </div>
               <div className="rounded-lg border bg-muted/30 p-3">
-                <Pencil className="mb-2 size-4 text-violet-600" />
+                <Pencil className="mb-2 size-4 text-foreground" />
                 <p className="font-medium text-foreground">Update</p>
                 <p className="mt-1 text-xs">Adjust scope notes, tags or effort assumptions.</p>
               </div>
               <div className="rounded-lg border bg-muted/30 p-3">
-                <Trash2 className="mb-2 size-4 text-red-500" />
+                <Trash2 className="mb-2 size-4 text-destructive" />
                 <p className="font-medium text-foreground">Delete</p>
                 <p className="mt-1 text-xs">Remove custom blueprints after confirmation.</p>
               </div>
@@ -81,7 +81,7 @@ function ScopeBlueprints({ workspace }: { workspace: WorkspaceData }) {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 font-display text-base">
-              <ShieldCheck className="size-5 text-emerald-600" />
+              <ShieldCheck className="size-5 text-foreground" />
               Access & safety
             </CardTitle>
           </CardHeader>

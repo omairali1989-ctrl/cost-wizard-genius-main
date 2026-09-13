@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatMoney, type Allocation, type TimeUnit } from "@/lib/pricing";
+import { formatMoney, hoursToUnit, type Allocation, type TimeUnit } from "@/lib/pricing";
 
 export interface TeamMemberRate {
   id: string;
@@ -27,6 +27,8 @@ interface AllocationRowProps {
   employees: TeamMemberRate[];
   rateFor: (id: string) => number;
   currency?: string;
+  hoursPerDay?: number;
+  hoursPerMonth?: number;
   onUpdate: (phaseId: string, allocId: string, patch: Partial<Allocation>) => void;
   onRemove: (phaseId: string, allocId: string) => void;
 }
@@ -37,6 +39,8 @@ export const AllocationRow = React.memo(function AllocationRow({
   employees,
   rateFor,
   currency = "PKR",
+  hoursPerDay = 8,
+  hoursPerMonth = 160,
   onUpdate,
   onRemove,
 }: AllocationRowProps) {
@@ -44,18 +48,8 @@ export const AllocationRow = React.memo(function AllocationRow({
 
   const displayValue = React.useMemo(() => {
     if (!a.hours) return "";
-    switch (unit) {
-      case "days":
-        return Math.round((a.hours / 8) * 10) / 10;
-      case "weeks":
-        return Math.round((a.hours / 40) * 10) / 10;
-      case "months":
-        return Math.round((a.hours / 160) * 10) / 10;
-      case "hours":
-      default:
-        return a.hours;
-    }
-  }, [a.hours, unit]);
+    return hoursToUnit(a.hours, unit, hoursPerDay, hoursPerMonth);
+  }, [a.hours, unit, hoursPerDay, hoursPerMonth]);
 
   const lineCost = React.useMemo(() => {
     return (Number(a.hours) || 0) * (Number(a.hourlyCost) || 0);
@@ -64,12 +58,12 @@ export const AllocationRow = React.memo(function AllocationRow({
   const durationEquiv = React.useMemo(() => {
     const h = Number(a.hours) || 0;
     if (h <= 0) return "";
-    const days = Math.round((h / 8) * 10) / 10;
-    const weeks = Math.round((h / 40) * 10) / 10;
+    const days = hoursToUnit(h, "days", hoursPerDay, hoursPerMonth);
+    const weeks = hoursToUnit(h, "weeks", hoursPerDay, hoursPerMonth);
     if (weeks >= 1) return `~${weeks}w (${days}d)`;
     if (days >= 1) return `~${days}d (${h}h)`;
     return `${h}h`;
-  }, [a.hours]);
+  }, [a.hours, hoursPerDay, hoursPerMonth]);
 
   const handlePersonChange = React.useCallback(
     (v: string) => {
@@ -85,7 +79,10 @@ export const AllocationRow = React.memo(function AllocationRow({
       onUpdate(phaseId, a.id, {
         employeeId: v,
         hourlyCost: rateFor(v),
-        label: a.label && a.label !== "Custom Specialist" ? a.label : (emp?.job_title ?? emp?.name ?? a.label),
+        label:
+          a.label && a.label !== "Custom Specialist"
+            ? a.label
+            : (emp?.job_title ?? emp?.name ?? a.label),
       });
     },
     [phaseId, a.id, a.hourlyCost, a.label, employees, rateFor, onUpdate],
@@ -148,9 +145,18 @@ export const AllocationRow = React.memo(function AllocationRow({
       const dept = (emp.department || "").toLowerCase();
       if (title.includes("design") || dept.includes("design")) {
         design.push(emp);
-      } else if (title.includes("project manager") || title.includes("qa") || title.includes("quality")) {
+      } else if (
+        title.includes("project manager") ||
+        title.includes("qa") ||
+        title.includes("quality")
+      ) {
         pm.push(emp);
-      } else if (title.includes("director") || title.includes("sales") || dept.includes("sales") || dept.includes("management")) {
+      } else if (
+        title.includes("director") ||
+        title.includes("sales") ||
+        dept.includes("sales") ||
+        dept.includes("management")
+      ) {
         mgmt.push(emp);
       } else {
         dev.push(emp);
@@ -174,8 +180,8 @@ export const AllocationRow = React.memo(function AllocationRow({
 
           {groupedEmployees.dev.length > 0 && (
             <SelectGroup>
-              <SelectLabel className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">
-                💻 Engineering & Development
+              <SelectLabel className="text-[11px] font-semibold text-foreground dark:text-muted-foreground">
+                Engineering & Development
               </SelectLabel>
               {groupedEmployees.dev.map((e) => (
                 <SelectItem key={e.id} value={e.id}>
@@ -192,8 +198,8 @@ export const AllocationRow = React.memo(function AllocationRow({
 
           {groupedEmployees.design.length > 0 && (
             <SelectGroup>
-              <SelectLabel className="text-[11px] font-semibold text-purple-600 dark:text-purple-400">
-                🎨 UI/UX & Design
+              <SelectLabel className="text-[11px] font-semibold text-foreground dark:text-muted-foreground">
+                UI/UX & Design
               </SelectLabel>
               {groupedEmployees.design.map((e) => (
                 <SelectItem key={e.id} value={e.id}>
@@ -210,8 +216,8 @@ export const AllocationRow = React.memo(function AllocationRow({
 
           {groupedEmployees.pm.length > 0 && (
             <SelectGroup>
-              <SelectLabel className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                📋 Project Management & QA
+              <SelectLabel className="text-[11px] font-semibold text-foreground dark:text-muted-foreground">
+                Project Management & QA
               </SelectLabel>
               {groupedEmployees.pm.map((e) => (
                 <SelectItem key={e.id} value={e.id}>
@@ -228,8 +234,8 @@ export const AllocationRow = React.memo(function AllocationRow({
 
           {groupedEmployees.mgmt.length > 0 && (
             <SelectGroup>
-              <SelectLabel className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-                💼 Leadership & Sales
+              <SelectLabel className="text-[11px] font-semibold text-warning dark:text-warning">
+                Leadership & Sales
               </SelectLabel>
               {groupedEmployees.mgmt.map((e) => (
                 <SelectItem key={e.id} value={e.id}>
@@ -248,6 +254,7 @@ export const AllocationRow = React.memo(function AllocationRow({
 
       {/* Role / Task Label */}
       <Input
+        aria-label="Role / Task label"
         placeholder="Role / Task label"
         value={a.label}
         onChange={handleLabelChange}
@@ -259,7 +266,16 @@ export const AllocationRow = React.memo(function AllocationRow({
         <div className="flex gap-1 items-center">
           <Input
             type="number"
-            placeholder={unit === "hours" ? "Hours" : unit === "days" ? "Days" : unit === "weeks" ? "Weeks" : "Months"}
+            aria-label={`Duration in ${unit}`}
+            placeholder={
+              unit === "hours"
+                ? "Hours"
+                : unit === "days"
+                  ? "Days"
+                  : unit === "weeks"
+                    ? "Weeks"
+                    : "Months"
+            }
             value={displayValue}
             onChange={handleDurationChange}
             className="h-9 min-w-[65px] text-xs font-mono"
@@ -277,15 +293,14 @@ export const AllocationRow = React.memo(function AllocationRow({
           </Select>
         </div>
         {durationEquiv && (
-          <span className="text-[10px] text-muted-foreground px-1 font-mono">
-            {durationEquiv}
-          </span>
+          <span className="text-[10px] text-muted-foreground px-1 font-mono">{durationEquiv}</span>
         )}
       </div>
 
       {/* Hourly Cost Input */}
       <div className="relative">
         <Input
+          aria-label="Rate/hr"
           type="number"
           placeholder="Rate/hr"
           value={a.hourlyCost || ""}

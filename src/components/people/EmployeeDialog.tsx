@@ -206,54 +206,56 @@ export const EmployeeDialog = React.memo(function EmployeeDialog({
             </Field>
           </div>
           <Field label="Skills" hint="Select several or type a skill and press Enter">
-            <div className="rounded-md border bg-background p-2 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
-              <div className="flex min-h-9 flex-wrap items-center gap-1.5">
-                {form.skills.map((skill) => (
-                  <Badge key={skill} variant="secondary" className="gap-1 pr-1">
-                    {skill}
+            <div>
+              <div className="rounded-md border bg-background p-2 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                <div className="flex min-h-9 flex-wrap items-center gap-1.5">
+                  {form.skills.map((skill) => (
+                    <Badge key={skill} variant="secondary" className="gap-1 pr-1">
+                      {skill}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${skill}`}
+                        className="rounded-sm p-0.5 hover:bg-muted"
+                        onClick={() => removeSkill(skill)}
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                  <Input
+                    className="h-8 min-w-[180px] flex-1 border-0 px-1 shadow-none focus-visible:ring-0"
+                    placeholder={form.skills.length ? "Add another skill" : "e.g. React"}
+                    value={skillDraft}
+                    onChange={(e) => handleSkillDraftChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === ",") {
+                        e.preventDefault();
+                        addSkill(skillDraft);
+                      } else if (e.key === "Backspace" && !skillDraft && form.skills.length) {
+                        removeSkill(form.skills.at(-1)!);
+                      }
+                    }}
+                    onBlur={() => addSkill(skillDraft)}
+                  />
+                </div>
+              </div>
+              {availableSuggestions.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Suggestions</span>
+                  {availableSuggestions.slice(0, 8).map((skill) => (
                     <button
+                      key={skill}
                       type="button"
-                      aria-label={`Remove ${skill}`}
-                      className="rounded-sm p-0.5 hover:bg-muted"
-                      onClick={() => removeSkill(skill)}
+                      className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                      onClick={() => addSkill(skill)}
                     >
-                      <X className="size-3" />
+                      <Plus className="size-3" />
+                      {skill}
                     </button>
-                  </Badge>
-                ))}
-                <Input
-                  className="h-8 min-w-[180px] flex-1 border-0 px-1 shadow-none focus-visible:ring-0"
-                  placeholder={form.skills.length ? "Add another skill" : "e.g. React"}
-                  value={skillDraft}
-                  onChange={(e) => handleSkillDraftChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === ",") {
-                      e.preventDefault();
-                      addSkill(skillDraft);
-                    } else if (e.key === "Backspace" && !skillDraft && form.skills.length) {
-                      removeSkill(form.skills.at(-1)!);
-                    }
-                  }}
-                  onBlur={() => addSkill(skillDraft)}
-                />
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {availableSuggestions.length > 0 && (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">Suggestions</span>
-                {availableSuggestions.slice(0, 8).map((skill) => (
-                  <button
-                    key={skill}
-                    type="button"
-                    className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-                    onClick={() => addSkill(skill)}
-                  >
-                    <Plus className="size-3" />
-                    {skill}
-                  </button>
-                ))}
-              </div>
-            )}
           </Field>
           <div className="flex items-center gap-3">
             <Switch

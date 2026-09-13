@@ -8,7 +8,21 @@ type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
 
-const SUPABASE_ORIGIN = "https://qhlqptgvizefbecsotvf.supabase.co";
+function configuredOrigin() {
+  const configuredSupabaseUrl =
+    process.env["SUPABASE_URL"] ||
+    process.env["VITE_SUPABASE_URL"] ||
+    import.meta.env["VITE_SUPABASE_URL"];
+  if (!configuredSupabaseUrl) return "";
+  try {
+    return new URL(configuredSupabaseUrl).origin;
+  } catch {
+    return "";
+  }
+}
+
+const SUPABASE_ORIGIN = configuredOrigin();
+const SUPABASE_WS_ORIGIN = SUPABASE_ORIGIN.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
 
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
@@ -20,7 +34,8 @@ const SECURITY_HEADERS: Record<string, string> = {
 
 function createContentSecurityPolicy(nonce?: string): string {
   const scriptSource = nonce ? `'self' 'nonce-${nonce}'` : "'none'";
-  return `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' ${SUPABASE_ORIGIN} wss://qhlqptgvizefbecsotvf.supabase.co; script-src ${scriptSource}`;
+  const connectSources = ["'self'", SUPABASE_ORIGIN, SUPABASE_WS_ORIGIN].filter(Boolean).join(" ");
+  return `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src ${connectSources}; script-src ${scriptSource}`;
 }
 
 function createCspNonce(): string {
@@ -98,6 +113,7 @@ function isH3SwallowedErrorBody(body: string): boolean {
 }
 
 import { handleApiRequest } from "./server/api";
+import { handleMcpRequest } from "./server/mcp";
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
@@ -106,15 +122,24 @@ export default {
       if (url.pathname.startsWith("/api/")) {
         return withSecurityHeaders(await handleApiRequest(request));
       }
+      if (
+        url.pathname === "/mcp" ||
+        url.pathname.startsWith("/.well-known/") ||
+        url.pathname.startsWith("/oauth/")
+      ) {
+        return withSecurityHeaders(await handleMcpRequest(request));
+      }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return withSecurityHeaders(await normalizeCatastrophicSsrResponse(response));
     } catch (error) {
       console.error(error);
-      return withSecurityHeaders(new Response(renderErrorPage(), {
-        status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      }));
+      return withSecurityHeaders(
+        new Response(renderErrorPage(), {
+          status: 500,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        }),
+      );
     }
   },
 };

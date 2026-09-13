@@ -78,7 +78,7 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
 
 export class QueryBuilder<TRow = any> {
   private table: string;
-  private op: "query" | "insert" | "update" | "delete" = "query";
+  private op: "query" | "insert" | "update" | "delete" | "upsert" = "query";
   private selectCols: string = "*";
   private insertData: any = null;
   private updateData: any = null;
@@ -99,6 +99,12 @@ export class QueryBuilder<TRow = any> {
 
   insert(data: any): this {
     this.op = "insert";
+    this.insertData = data;
+    return this;
+  }
+
+  upsert(data: any): this {
+    this.op = "upsert";
     this.insertData = data;
     return this;
   }
@@ -144,6 +150,11 @@ export class QueryBuilder<TRow = any> {
     return this;
   }
 
+  lt(column: string, value: any): this {
+    this.filters.push({ column, op: "lt", value });
+    return this;
+  }
+
   single(): Promise<{ data: TRow; error: any }> {
     this.isSingle = true;
     return this.execute() as Promise<{ data: TRow; error: any }>;
@@ -158,6 +169,15 @@ export class QueryBuilder<TRow = any> {
     try {
       if (this.op === "insert") {
         const res = await apiFetch("/api/data/insert", {
+          method: "POST",
+          body: JSON.stringify({ table: this.table, data: this.insertData }),
+        });
+        const json = await res.json();
+        return { data: json.data, error: json.error || null };
+      }
+
+      if (this.op === "upsert") {
+        const res = await apiFetch("/api/data/upsert", {
           method: "POST",
           body: JSON.stringify({ table: this.table, data: this.insertData }),
         });
@@ -205,8 +225,9 @@ export class QueryBuilder<TRow = any> {
 
   // Support awaiting the builder directly without .single() or .maybeSingle()
   then<TResult1 = { data: TRow[]; error: any }, TResult2 = never>(
-    onfulfilled?: ((value: { data: TRow[]; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+    onfulfilled?:
+      ((value: { data: TRow[]; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
     return (this.execute() as Promise<{ data: TRow[]; error: any }>).then(onfulfilled, onrejected);
   }
@@ -216,14 +237,32 @@ export interface SupabaseClient {
   auth: {
     getSession(): Promise<{ data: { session: Session | null }; error: any }>;
     getUser(): Promise<{ data: { user: User | null }; error: any }>;
-    signInWithPassword(credentials: { email: string; password: string }): Promise<{ data: { user: User | null; session: Session | null }; error: any }>;
-    signUp(credentials: { email: string; password: string; options?: { data?: { full_name?: string }; emailRedirectTo?: string } }): Promise<{ data: { user: User | null; session: Session | null }; error: any }>;
-    verifyOtp(params: { email: string; token: string; type: "signup" }): Promise<{ data: { user: User | null; session: Session | null }; error: any }>;
+    signInWithPassword(credentials: {
+      email: string;
+      password: string;
+    }): Promise<{ data: { user: User | null; session: Session | null }; error: any }>;
+    signUp(credentials: {
+      email: string;
+      password: string;
+      options?: { data?: { full_name?: string }; emailRedirectTo?: string };
+    }): Promise<{ data: { user: User | null; session: Session | null }; error: any }>;
+    verifyOtp(params: {
+      email: string;
+      token: string;
+      type: "signup";
+    }): Promise<{ data: { user: User | null; session: Session | null }; error: any }>;
     resend(params: { type: "signup"; email: string }): Promise<{ data: any; error: any }>;
-    resetPasswordForEmail(email: string, options?: { redirectTo?: string }): Promise<{ data: any; error: any }>;
-    updateUser(attributes: { password: string }): Promise<{ data: { user: User | null }; error: any }>;
+    resetPasswordForEmail(
+      email: string,
+      options?: { redirectTo?: string },
+    ): Promise<{ data: any; error: any }>;
+    updateUser(attributes: {
+      password: string;
+    }): Promise<{ data: { user: User | null }; error: any }>;
     signOut(): Promise<{ error: any }>;
-    onAuthStateChange(callback: AuthStateListener): { data: { subscription: { unsubscribe: () => void } } };
+    onAuthStateChange(callback: AuthStateListener): {
+      data: { subscription: { unsubscribe: () => void } };
+    };
   };
   from<TName extends keyof PublicTables>(table: TName): QueryBuilder<PublicTables[TName]["Row"]>;
   from<T = any>(table: string): QueryBuilder<T>;
@@ -376,7 +415,10 @@ const supabaseBackend =
     : null;
 
 if (useSupabaseBackend && !supabaseBackend) {
-  throw new Error("Supabase backend is enabled but VITE_SUPABASE_URL or VITE_SUPABASE_KEY is missing.");
+  throw new Error(
+    "Supabase backend is enabled but VITE_SUPABASE_URL or VITE_SUPABASE_KEY is missing.",
+  );
 }
 
-export const supabase: SupabaseClient = (supabaseBackend ?? mysqlSupabase) as unknown as SupabaseClient;
+export const supabase: SupabaseClient = (supabaseBackend ??
+  mysqlSupabase) as unknown as SupabaseClient;

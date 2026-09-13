@@ -152,7 +152,9 @@ function PeopleFinance({ workspace }: { workspace: import("@/lib/workspace").Wor
 
   const startNew = () => {
     setEditing(null);
-    setForm({ ...blank });
+    // Default to the workspace's own currency — defaulting to PKR silently stores
+    // salaries in the wrong currency and converts them away.
+    setForm({ ...blank, salary_currency: currency });
     setOpen(true);
   };
 
@@ -240,15 +242,17 @@ function PeopleFinance({ workspace }: { workspace: import("@/lib/workspace").Wor
         <StatCard
           label="Average hourly cost"
           value={formatMoney(
-            employees.length && workspace.policy
-              ? employees.reduce(
-                  (s, e) => s + hourlyCostFor(e, workspace.policy!, ohPerEmployee, currency),
-                  0,
-                ) / employees.length
+            activeCount && workspace.policy
+              ? employees
+                  .filter((e) => e.active)
+                  .reduce(
+                    (s, e) => s + hourlyCostFor(e, workspace.policy!, ohPerEmployee, currency),
+                    0,
+                  ) / activeCount
               : 0,
             currency,
           )}
-          hint="Internal cost, before margin"
+          hint="Internal cost of active staff, before margin"
         />
       </div>
 
@@ -319,10 +323,12 @@ function PeopleFinance({ workspace }: { workspace: import("@/lib/workspace").Wor
                       {workspace.canManageCosts && (
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" onClick={() => startEdit(e)}>
-                            <Pencil className="size-4" />
+                            <Pencil className="size-4" aria-hidden="true" />
+                            <span className="sr-only">Edit {e.name}</span>
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => remove(e)}>
-                            <Trash2 className="size-4" />
+                            <Trash2 className="size-4" aria-hidden="true" />
+                            <span className="sr-only">Remove {e.name}</span>
                           </Button>
                         </div>
                       )}

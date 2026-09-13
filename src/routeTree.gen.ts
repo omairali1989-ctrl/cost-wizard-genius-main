@@ -13,7 +13,9 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as McpAuthorizeRouteImport } from './routes/mcp-authorize'
 import { Route as AuthenticatedActivityRouteImport } from './routes/_authenticated/activity'
+import { Route as AuthenticatedBusinessIntelligenceRouteImport } from './routes/_authenticated/business-intelligence'
 import { Route as AuthenticatedCalculatorRouteImport } from './routes/_authenticated/calculator'
 import { Route as AuthenticatedCompareRouteImport } from './routes/_authenticated/compare'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
@@ -25,6 +27,15 @@ import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects.index'
 import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authenticated/projects.$id'
+import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings.index'
+import { Route as AuthenticatedSettingsAiProductivityRouteImport } from './routes/_authenticated/settings.ai-productivity'
+import { Route as AuthenticatedSettingsCompanyRouteImport } from './routes/_authenticated/settings.company'
+import { Route as AuthenticatedSettingsConnectionsRouteImport } from './routes/_authenticated/settings.connections'
+import { Route as AuthenticatedSettingsFeatureLibraryRouteImport } from './routes/_authenticated/settings.feature-library'
+import { Route as AuthenticatedSettingsOverheadsRouteImport } from './routes/_authenticated/settings.overheads'
+import { Route as AuthenticatedSettingsPolicyRouteImport } from './routes/_authenticated/settings.policy'
+import { Route as AuthenticatedSettingsSalesCommissionRouteImport } from './routes/_authenticated/settings.sales-commission'
+import { Route as AuthenticatedSettingsTeamRouteImport } from './routes/_authenticated/settings.team'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -45,11 +56,22 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const McpAuthorizeRoute = McpAuthorizeRouteImport.update({
+  id: '/mcp-authorize',
+  path: '/mcp-authorize',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedActivityRoute = AuthenticatedActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedBusinessIntelligenceRoute =
+  AuthenticatedBusinessIntelligenceRouteImport.update({
+    id: '/business-intelligence',
+    path: '/business-intelligence',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedCalculatorRoute = AuthenticatedCalculatorRouteImport.update({
   id: '/calculator',
   path: '/calculator',
@@ -107,40 +129,115 @@ const AuthenticatedProjectsIdRoute = AuthenticatedProjectsIdRouteImport.update({
   path: '/projects/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSettingsIndexRoute =
+  AuthenticatedSettingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsAiProductivityRoute =
+  AuthenticatedSettingsAiProductivityRouteImport.update({
+    id: '/ai-productivity',
+    path: '/ai-productivity',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsCompanyRoute =
+  AuthenticatedSettingsCompanyRouteImport.update({
+    id: '/company',
+    path: '/company',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsConnectionsRoute =
+  AuthenticatedSettingsConnectionsRouteImport.update({
+    id: '/connections',
+    path: '/connections',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsFeatureLibraryRoute =
+  AuthenticatedSettingsFeatureLibraryRouteImport.update({
+    id: '/feature-library',
+    path: '/feature-library',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsOverheadsRoute =
+  AuthenticatedSettingsOverheadsRouteImport.update({
+    id: '/overheads',
+    path: '/overheads',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsPolicyRoute =
+  AuthenticatedSettingsPolicyRouteImport.update({
+    id: '/policy',
+    path: '/policy',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsSalesCommissionRoute =
+  AuthenticatedSettingsSalesCommissionRouteImport.update({
+    id: '/sales-commission',
+    path: '/sales-commission',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsTeamRoute =
+  AuthenticatedSettingsTeamRouteImport.update({
+    id: '/team',
+    path: '/team',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/login': typeof LoginRoute
+  '/mcp-authorize': typeof McpAuthorizeRoute
   '/activity': typeof AuthenticatedActivityRoute
+  '/business-intelligence': typeof AuthenticatedBusinessIntelligenceRoute
   '/calculator': typeof AuthenticatedCalculatorRoute
   '/compare': typeof AuthenticatedCompareRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/guide': typeof AuthenticatedGuideRoute
   '/people': typeof AuthenticatedPeopleRoute
   '/scope-blueprints': typeof AuthenticatedScopeBlueprintsRoute
-  '/settings': typeof AuthenticatedSettingsRoute
+  '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/setup': typeof AuthenticatedSetupRoute
   '/invite/$token': typeof InviteTokenRoute
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/settings/ai-productivity': typeof AuthenticatedSettingsAiProductivityRoute
+  '/settings/company': typeof AuthenticatedSettingsCompanyRoute
+  '/settings/connections': typeof AuthenticatedSettingsConnectionsRoute
+  '/settings/feature-library': typeof AuthenticatedSettingsFeatureLibraryRoute
+  '/settings/overheads': typeof AuthenticatedSettingsOverheadsRoute
+  '/settings/policy': typeof AuthenticatedSettingsPolicyRoute
+  '/settings/sales-commission': typeof AuthenticatedSettingsSalesCommissionRoute
+  '/settings/team': typeof AuthenticatedSettingsTeamRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/settings/': typeof AuthenticatedSettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/login': typeof LoginRoute
+  '/mcp-authorize': typeof McpAuthorizeRoute
   '/activity': typeof AuthenticatedActivityRoute
+  '/business-intelligence': typeof AuthenticatedBusinessIntelligenceRoute
   '/calculator': typeof AuthenticatedCalculatorRoute
   '/compare': typeof AuthenticatedCompareRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/guide': typeof AuthenticatedGuideRoute
   '/people': typeof AuthenticatedPeopleRoute
   '/scope-blueprints': typeof AuthenticatedScopeBlueprintsRoute
-  '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/invite/$token': typeof InviteTokenRoute
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/settings/ai-productivity': typeof AuthenticatedSettingsAiProductivityRoute
+  '/settings/company': typeof AuthenticatedSettingsCompanyRoute
+  '/settings/connections': typeof AuthenticatedSettingsConnectionsRoute
+  '/settings/feature-library': typeof AuthenticatedSettingsFeatureLibraryRoute
+  '/settings/overheads': typeof AuthenticatedSettingsOverheadsRoute
+  '/settings/policy': typeof AuthenticatedSettingsPolicyRoute
+  '/settings/sales-commission': typeof AuthenticatedSettingsSalesCommissionRoute
+  '/settings/team': typeof AuthenticatedSettingsTeamRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
+  '/settings': typeof AuthenticatedSettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -148,18 +245,29 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/login': typeof LoginRoute
+  '/mcp-authorize': typeof McpAuthorizeRoute
   '/_authenticated/activity': typeof AuthenticatedActivityRoute
+  '/_authenticated/business-intelligence': typeof AuthenticatedBusinessIntelligenceRoute
   '/_authenticated/calculator': typeof AuthenticatedCalculatorRoute
   '/_authenticated/compare': typeof AuthenticatedCompareRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/guide': typeof AuthenticatedGuideRoute
   '/_authenticated/people': typeof AuthenticatedPeopleRoute
   '/_authenticated/scope-blueprints': typeof AuthenticatedScopeBlueprintsRoute
-  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/_authenticated/setup': typeof AuthenticatedSetupRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/_authenticated/settings/ai-productivity': typeof AuthenticatedSettingsAiProductivityRoute
+  '/_authenticated/settings/company': typeof AuthenticatedSettingsCompanyRoute
+  '/_authenticated/settings/connections': typeof AuthenticatedSettingsConnectionsRoute
+  '/_authenticated/settings/feature-library': typeof AuthenticatedSettingsFeatureLibraryRoute
+  '/_authenticated/settings/overheads': typeof AuthenticatedSettingsOverheadsRoute
+  '/_authenticated/settings/policy': typeof AuthenticatedSettingsPolicyRoute
+  '/_authenticated/settings/sales-commission': typeof AuthenticatedSettingsSalesCommissionRoute
+  '/_authenticated/settings/team': typeof AuthenticatedSettingsTeamRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -167,7 +275,9 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/login'
+    | '/mcp-authorize'
     | '/activity'
+    | '/business-intelligence'
     | '/calculator'
     | '/compare'
     | '/dashboard'
@@ -178,31 +288,52 @@ export interface FileRouteTypes {
     | '/setup'
     | '/invite/$token'
     | '/projects/$id'
+    | '/settings/ai-productivity'
+    | '/settings/company'
+    | '/settings/connections'
+    | '/settings/feature-library'
+    | '/settings/overheads'
+    | '/settings/policy'
+    | '/settings/sales-commission'
+    | '/settings/team'
     | '/projects/'
+    | '/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/login'
+    | '/mcp-authorize'
     | '/activity'
+    | '/business-intelligence'
     | '/calculator'
     | '/compare'
     | '/dashboard'
     | '/guide'
     | '/people'
     | '/scope-blueprints'
-    | '/settings'
     | '/setup'
     | '/invite/$token'
     | '/projects/$id'
+    | '/settings/ai-productivity'
+    | '/settings/company'
+    | '/settings/connections'
+    | '/settings/feature-library'
+    | '/settings/overheads'
+    | '/settings/policy'
+    | '/settings/sales-commission'
+    | '/settings/team'
     | '/projects'
+    | '/settings'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
     | '/login'
+    | '/mcp-authorize'
     | '/_authenticated/activity'
+    | '/_authenticated/business-intelligence'
     | '/_authenticated/calculator'
     | '/_authenticated/compare'
     | '/_authenticated/dashboard'
@@ -213,7 +344,16 @@ export interface FileRouteTypes {
     | '/_authenticated/setup'
     | '/invite/$token'
     | '/_authenticated/projects/$id'
+    | '/_authenticated/settings/ai-productivity'
+    | '/_authenticated/settings/company'
+    | '/_authenticated/settings/connections'
+    | '/_authenticated/settings/feature-library'
+    | '/_authenticated/settings/overheads'
+    | '/_authenticated/settings/policy'
+    | '/_authenticated/settings/sales-commission'
+    | '/_authenticated/settings/team'
     | '/_authenticated/projects/'
+    | '/_authenticated/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -221,6 +361,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   LoginRoute: typeof LoginRoute
+  McpAuthorizeRoute: typeof McpAuthorizeRoute
   InviteTokenRoute: typeof InviteTokenRoute
 }
 
@@ -254,11 +395,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp-authorize': {
+      id: '/mcp-authorize'
+      path: '/mcp-authorize'
+      fullPath: '/mcp-authorize'
+      preLoaderRoute: typeof McpAuthorizeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/activity': {
       id: '/_authenticated/activity'
       path: '/activity'
       fullPath: '/activity'
       preLoaderRoute: typeof AuthenticatedActivityRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/business-intelligence': {
+      id: '/_authenticated/business-intelligence'
+      path: '/business-intelligence'
+      fullPath: '/business-intelligence'
+      preLoaderRoute: typeof AuthenticatedBusinessIntelligenceRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/calculator': {
@@ -338,18 +493,114 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProjectsIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/settings/': {
+      id: '/_authenticated/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/ai-productivity': {
+      id: '/_authenticated/settings/ai-productivity'
+      path: '/ai-productivity'
+      fullPath: '/settings/ai-productivity'
+      preLoaderRoute: typeof AuthenticatedSettingsAiProductivityRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/company': {
+      id: '/_authenticated/settings/company'
+      path: '/company'
+      fullPath: '/settings/company'
+      preLoaderRoute: typeof AuthenticatedSettingsCompanyRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/connections': {
+      id: '/_authenticated/settings/connections'
+      path: '/connections'
+      fullPath: '/settings/connections'
+      preLoaderRoute: typeof AuthenticatedSettingsConnectionsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/feature-library': {
+      id: '/_authenticated/settings/feature-library'
+      path: '/feature-library'
+      fullPath: '/settings/feature-library'
+      preLoaderRoute: typeof AuthenticatedSettingsFeatureLibraryRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/overheads': {
+      id: '/_authenticated/settings/overheads'
+      path: '/overheads'
+      fullPath: '/settings/overheads'
+      preLoaderRoute: typeof AuthenticatedSettingsOverheadsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/policy': {
+      id: '/_authenticated/settings/policy'
+      path: '/policy'
+      fullPath: '/settings/policy'
+      preLoaderRoute: typeof AuthenticatedSettingsPolicyRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/sales-commission': {
+      id: '/_authenticated/settings/sales-commission'
+      path: '/sales-commission'
+      fullPath: '/settings/sales-commission'
+      preLoaderRoute: typeof AuthenticatedSettingsSalesCommissionRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/team': {
+      id: '/_authenticated/settings/team'
+      path: '/team'
+      fullPath: '/settings/team'
+      preLoaderRoute: typeof AuthenticatedSettingsTeamRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
   }
 }
 
+interface AuthenticatedSettingsRouteChildren {
+  AuthenticatedSettingsAiProductivityRoute: typeof AuthenticatedSettingsAiProductivityRoute
+  AuthenticatedSettingsCompanyRoute: typeof AuthenticatedSettingsCompanyRoute
+  AuthenticatedSettingsConnectionsRoute: typeof AuthenticatedSettingsConnectionsRoute
+  AuthenticatedSettingsFeatureLibraryRoute: typeof AuthenticatedSettingsFeatureLibraryRoute
+  AuthenticatedSettingsOverheadsRoute: typeof AuthenticatedSettingsOverheadsRoute
+  AuthenticatedSettingsPolicyRoute: typeof AuthenticatedSettingsPolicyRoute
+  AuthenticatedSettingsSalesCommissionRoute: typeof AuthenticatedSettingsSalesCommissionRoute
+  AuthenticatedSettingsTeamRoute: typeof AuthenticatedSettingsTeamRoute
+  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
+}
+
+const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
+  AuthenticatedSettingsAiProductivityRoute:
+    AuthenticatedSettingsAiProductivityRoute,
+  AuthenticatedSettingsCompanyRoute: AuthenticatedSettingsCompanyRoute,
+  AuthenticatedSettingsConnectionsRoute: AuthenticatedSettingsConnectionsRoute,
+  AuthenticatedSettingsFeatureLibraryRoute:
+    AuthenticatedSettingsFeatureLibraryRoute,
+  AuthenticatedSettingsOverheadsRoute: AuthenticatedSettingsOverheadsRoute,
+  AuthenticatedSettingsPolicyRoute: AuthenticatedSettingsPolicyRoute,
+  AuthenticatedSettingsSalesCommissionRoute:
+    AuthenticatedSettingsSalesCommissionRoute,
+  AuthenticatedSettingsTeamRoute: AuthenticatedSettingsTeamRoute,
+  AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
+}
+
+const AuthenticatedSettingsRouteWithChildren =
+  AuthenticatedSettingsRoute._addFileChildren(
+    AuthenticatedSettingsRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedActivityRoute: typeof AuthenticatedActivityRoute
+  AuthenticatedBusinessIntelligenceRoute: typeof AuthenticatedBusinessIntelligenceRoute
   AuthenticatedCalculatorRoute: typeof AuthenticatedCalculatorRoute
   AuthenticatedCompareRoute: typeof AuthenticatedCompareRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedGuideRoute: typeof AuthenticatedGuideRoute
   AuthenticatedPeopleRoute: typeof AuthenticatedPeopleRoute
   AuthenticatedScopeBlueprintsRoute: typeof AuthenticatedScopeBlueprintsRoute
-  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
   AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
   AuthenticatedProjectsIdRoute: typeof AuthenticatedProjectsIdRoute
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
@@ -357,13 +608,15 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedActivityRoute: AuthenticatedActivityRoute,
+  AuthenticatedBusinessIntelligenceRoute:
+    AuthenticatedBusinessIntelligenceRoute,
   AuthenticatedCalculatorRoute: AuthenticatedCalculatorRoute,
   AuthenticatedCompareRoute: AuthenticatedCompareRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedGuideRoute: AuthenticatedGuideRoute,
   AuthenticatedPeopleRoute: AuthenticatedPeopleRoute,
   AuthenticatedScopeBlueprintsRoute: AuthenticatedScopeBlueprintsRoute,
-  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedSetupRoute: AuthenticatedSetupRoute,
   AuthenticatedProjectsIdRoute: AuthenticatedProjectsIdRoute,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
@@ -377,6 +630,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   LoginRoute: LoginRoute,
+  McpAuthorizeRoute: McpAuthorizeRoute,
   InviteTokenRoute: InviteTokenRoute,
 }
 export const routeTree = rootRouteImport

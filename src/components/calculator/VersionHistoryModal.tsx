@@ -99,14 +99,17 @@ export function VersionHistoryModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
         {/* Modal Header */}
-        <div className="p-5 border-b bg-gradient-to-r from-primary/10 via-card to-background">
+        <div className="p-5 border-b from-primary/10 via-card to-background">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <DialogTitle className="font-display font-bold text-lg flex items-center gap-2">
                 <History className="size-5 text-primary" />
                 <span>Estimate Version History</span>
                 {currentVersion && (
-                  <Badge variant="secondary" className="text-xs font-mono font-bold bg-primary/10 text-primary">
+                  <Badge
+                    variant="secondary"
+                    className="text-xs font-mono font-bold bg-primary/10 text-primary"
+                  >
                     Active: v{currentVersion}
                   </Badge>
                 )}
@@ -129,7 +132,10 @@ export function VersionHistoryModal({
 
         {/* Create New Version Form Panel */}
         {isCreatingNew && (
-          <form onSubmit={handleSaveSubmit} className="p-4 bg-muted/40 border-b space-y-3 animate-in fade-in-50">
+          <form
+            onSubmit={handleSaveSubmit}
+            className="p-4 bg-muted/40 border-b space-y-3 animate-in fade-in-50"
+          >
             <div className="flex items-center gap-2">
               <GitBranch className="size-4 text-primary" />
               <span className="text-xs font-bold text-foreground">
@@ -137,8 +143,11 @@ export function VersionHistoryModal({
               </span>
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] text-muted-foreground">Version Notes / Description</label>
+              <label className="text-[11px] text-muted-foreground">
+                Version Notes / Description
+              </label>
               <Input
+                aria-label="Version Notes / Description"
                 value={newVersionLabel}
                 onChange={(e) => setNewVersionLabel(e.target.value)}
                 placeholder={`e.g. Added mobile app squad, adjusted to 15% margin...`}
@@ -160,7 +169,7 @@ export function VersionHistoryModal({
                 type="submit"
                 size="sm"
                 disabled={isSaving}
-                className="h-7 text-xs gap-1.5 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="h-7 text-xs gap-1.5 font-semibold bg-primary hover:bg-primary text-white"
               >
                 <Save className="size-3" />
                 <span>{isSaving ? "Saving..." : `Save as v${nextVersionNumber}`}</span>
@@ -204,7 +213,10 @@ export function VersionHistoryModal({
                 });
                 const price = ver.results?.price ?? 0;
                 const hours = ver.results?.totalHours ?? 0;
-                const margin = ver.inputs?.marginPct ?? 0;
+                // The realised margin, not the target knob: in markup mode the knob is
+                // never applied, and any discount pushes the achieved margin below it.
+                // The project page shows results.marginPct, so this must match.
+                const margin = ver.results?.marginPct ?? 0;
 
                 return (
                   <div
@@ -227,7 +239,7 @@ export function VersionHistoryModal({
                           {ver.label || `Version ${ver.version}`}
                         </h4>
                         {isCurrent && (
-                          <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                          <span className="flex items-center gap-1 text-[10px] text-foreground dark:text-muted-foreground font-semibold bg-muted px-2 py-0.5 rounded-full">
                             <CheckCircle2 className="size-3" /> Active Now
                           </span>
                         )}
@@ -248,7 +260,7 @@ export function VersionHistoryModal({
                           {formatMoney(price, currency)}
                         </div>
                         <div className="text-[11px] text-muted-foreground font-mono">
-                          {hours}h ({Math.round(hours / 8)}d) • {margin}% margin
+                          {hours}h • {margin.toFixed(1)}% margin
                         </div>
                       </div>
 

@@ -1,4 +1,5 @@
 import { calculate, emptyInputs, unitToHours, hoursToUnit, formatMoney } from "../src/lib/pricing";
+import assert from "node:assert/strict";
 
 console.log("=== RUNNING FULL VERIFICATION TEST ===");
 
@@ -10,6 +11,10 @@ console.log("1 month in hours:", unitToHours(1, "months")); // should be 160
 console.log("160 hours in months:", hoursToUnit(160, "months")); // 1
 console.log("40 hours in weeks:", hoursToUnit(40, "weeks")); // 1
 console.log("8 hours in days:", hoursToUnit(8, "days")); // 1
+assert.equal(unitToHours(1, "days"), 8);
+assert.equal(unitToHours(1, "weeks"), 40);
+assert.equal(unitToHours(1, "months"), 160);
+assert.equal(hoursToUnit(160, "months"), 1);
 
 // 2. Calculation with sales commission, overheads, and rate breakdown
 const testInputs = {
@@ -67,6 +72,42 @@ const testInputs = {
 };
 
 const results = calculate(testInputs);
+assert.ok(results.totalHours > 0);
+assert.equal(results.laborHours, 656);
+assert.equal(results.supportHours, 0);
+assert.ok(results.price > results.totalCost);
+const dynamicAssumptions = calculate({ ...testInputs, hoursPerDay: 7, hoursPerMonth: 140 });
+assert.equal(dynamicAssumptions.pricePerDay, dynamicAssumptions.pricePerHour * 7);
+assert.equal(dynamicAssumptions.hoursPerMonth, 140);
+
+// Margin and markup modes must use the same cost base, while discounts reduce
+// the final quote and therefore reduce the realized margin.
+const markupResult = calculate({ ...testInputs, pricingMode: "markup", markupPct: 35 });
+assert.equal(markupResult.priceBeforeDiscount, markupResult.totalCost * 1.35);
+const discountedResult = calculate({ ...testInputs, discountPct: 10, roundingStep: 0 });
+assert.ok(Math.abs(discountedResult.price - discountedResult.priceBeforeDiscount * 0.9) < 0.01);
+assert.ok(discountedResult.marginPct < results.marginPct);
+
+// Invalid negative line items must never create a negative quote or cost.
+const guardedResult = calculate({
+  ...testInputs,
+  phases: [
+    {
+      ...testInputs.phases[0],
+      allocations: [{ ...testInputs.phases[0].allocations[0], hours: -40 }],
+    },
+  ],
+  support: { enabled: true, months: -2, hoursPerMonth: 10, hourlyCost: 100 },
+  additionalWork: [{ id: "negative", label: "Invalid", amount: -500 }],
+  technology: [
+    { id: "negative-tech", label: "Invalid", monthlyCost: -100, months: 2, oneOffCost: -50 },
+  ],
+});
+assert.ok(guardedResult.laborCost >= 0);
+assert.ok(guardedResult.supportCost >= 0);
+assert.ok(guardedResult.additionalCost >= 0);
+assert.ok(guardedResult.technologyCost >= 0);
+assert.ok(guardedResult.price >= 0);
 console.log("\n2. Project Results:");
 console.log("Total Hours:", results.totalHours);
 console.log("Total Labor Cost:", results.laborCost.toLocaleString(), "PKR");
@@ -74,14 +115,30 @@ console.log("Contingency (10%):", results.contingencyAmount.toLocaleString(), "P
 console.log("Total Delivery Cost:", results.totalCost.toLocaleString(), "PKR");
 console.log("Client Price (25% margin):", results.price.toLocaleString(), "PKR");
 console.log("Gross Profit:", results.profit.toLocaleString(), "PKR");
-console.log("Sales Commission (5% for Ayesha):", results.salesCommissionAmount.toLocaleString(), "PKR");
+console.log(
+  "Sales Commission (5% for Ayesha):",
+  results.salesCommissionAmount.toLocaleString(),
+  "PKR",
+);
 console.log("Net Company Profit:", results.netProfitAfterCommission.toLocaleString(), "PKR");
 
 console.log("\n3. Rate breakdown:");
 console.log("Hourly Rate to Client:", Math.round(results.pricePerHour).toLocaleString(), "PKR/hr");
-console.log("Daily Rate to Client (8h):", Math.round(results.pricePerDay).toLocaleString(), "PKR/day");
-console.log("Weekly Rate to Client (40h):", Math.round(results.pricePerWeek).toLocaleString(), "PKR/wk");
-console.log("Monthly Rate to Client (160h):", Math.round(results.pricePerMonth).toLocaleString(), "PKR/mo");
+console.log(
+  "Daily Rate to Client (8h):",
+  Math.round(results.pricePerDay).toLocaleString(),
+  "PKR/day",
+);
+console.log(
+  "Weekly Rate to Client (40h):",
+  Math.round(results.pricePerWeek).toLocaleString(),
+  "PKR/wk",
+);
+console.log(
+  "Monthly Rate to Client (160h):",
+  Math.round(results.pricePerMonth).toLocaleString(),
+  "PKR/mo",
+);
 
 console.log("Internal Cost / Hour:", Math.round(results.costPerHour).toLocaleString(), "PKR/hr");
 console.log("Internal Cost / Day:", Math.round(results.costPerDay).toLocaleString(), "PKR/day");
@@ -113,7 +170,9 @@ for (const p of samplePresets) {
       {
         id: "p1",
         name: "Delivery",
-        allocations: [{ id: "a1", employeeId: "e1", label: "Dev", hours: p.hours, hourlyCost: p.rate }],
+        allocations: [
+          { id: "a1", employeeId: "e1", label: "Dev", hours: p.hours, hourlyCost: p.rate },
+        ],
       },
     ],
     support: { enabled: false, months: 0, hoursPerMonth: 0, hourlyCost: 0 },
@@ -130,7 +189,9 @@ for (const p of samplePresets) {
     notes: "",
   };
   const res = calculate(input);
-  console.log(`✓ ${p.name.padEnd(38)} | Quote: ${Math.round(res.price).toLocaleString().padStart(10)} PKR | Day: ${Math.round(res.pricePerDay).toLocaleString().padStart(7)} PKR | Commission: ${Math.round(res.salesCommissionAmount).toLocaleString().padStart(7)} PKR`);
+  console.log(
+    `✓ ${p.name.padEnd(38)} | Quote: ${Math.round(res.price).toLocaleString().padStart(10)} PKR | Day: ${Math.round(res.pricePerDay).toLocaleString().padStart(7)} PKR | Commission: ${Math.round(res.salesCommissionAmount).toLocaleString().padStart(7)} PKR`,
+  );
 }
 
 console.log("\nALL 11 PRESET SCOPES CALCULATED AND VERIFIED SUCCESSFULLY!");

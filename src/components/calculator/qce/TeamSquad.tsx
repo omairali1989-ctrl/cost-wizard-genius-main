@@ -1,13 +1,7 @@
 // ─── TeamSquad ────────────────────────────────────────────────────────────────
 // Squad header, available-member chips, group controllers, active member cards
 import * as React from "react";
-import {
-  Plus,
-  Trash2,
-  Users,
-  UserPlus,
-  Link2,
-} from "lucide-react";
+import { Plus, Trash2, Users, UserPlus, Link2, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -21,12 +15,7 @@ import {
 } from "@/components/ui/select";
 import { formatMoney } from "@/lib/pricing";
 import type { TimeUnit } from "@/lib/pricing";
-import type {
-  RoleGroup,
-  TeamMemberRate,
-  MemberAllocation,
-  TeamGroupDuration,
-} from "./types";
+import type { RoleGroup, TeamMemberRate, MemberAllocation, TeamGroupDuration } from "./types";
 import { ROLE_GROUP_INFO, getEmployeeRoleGroup } from "./types";
 import { TeamGroupController } from "./TeamGroupController";
 
@@ -99,9 +88,7 @@ export const TeamSquad = React.memo(function TeamSquad({
   onGroupPercentAdjust,
   onIndividualIncrementDays,
 }: TeamSquadProps) {
-  const [activeGroupFilter, setActiveGroupFilter] = React.useState<
-    "all" | RoleGroup
-  >("all");
+  const [activeGroupFilter, setActiveGroupFilter] = React.useState<"all" | RoleGroup>("all");
 
   const filteredAssignedPeople = React.useMemo(() => {
     if (activeGroupFilter === "all") return assignedPeople;
@@ -127,17 +114,15 @@ export const TeamSquad = React.memo(function TeamSquad({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
         <div>
           <div className="flex items-center gap-2">
-            <Label className="text-sm font-semibold">
-              3. Team Squad &amp; Resource Allocation
-            </Label>
+            <Label className="text-sm font-semibold">3. Team Squad &amp; Resource Allocation</Label>
             <Badge variant="secondary" className="text-[11px] font-semibold">
               {assignedPeople.length} members active ·{" "}
               {Math.round(assignedPeople.reduce((s, p) => s + p.hours, 0))} hrs total
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Set number of days/weeks/months for Dev &amp; Design teams to adjust all
-            members automatically, or customize any individual.
+            Set number of days/weeks/months for Dev &amp; Design teams to adjust all members
+            automatically, or customize any individual.
           </p>
         </div>
 
@@ -165,12 +150,14 @@ export const TeamSquad = React.memo(function TeamSquad({
                   return (
                     <SelectItem key={emp.id} value={emp.id}>
                       <div className="flex items-center justify-between gap-3 text-left">
-                        <span className="font-semibold">
-                          {groupInfo.icon} {emp.name}
+                        <span className="flex items-center gap-1.5 font-semibold">
+                          <groupInfo.icon
+                            className="size-3.5 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                          {emp.name}
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          ({emp.job_title})
-                        </span>
+                        <span className="text-xs text-muted-foreground">({emp.job_title})</span>
                         <span className="text-[11px] font-mono font-medium text-primary">
                           {formatMoney(emp.hourly_cost, currency)}/hr
                         </span>
@@ -209,11 +196,9 @@ export const TeamSquad = React.memo(function TeamSquad({
                   title={`Add ${emp.name} (${emp.job_title}) at ${formatMoney(emp.hourly_cost, currency)}/hr`}
                 >
                   <Plus className="size-3 text-primary shrink-0" />
-                  <span>{info.icon}</span>
+                  <info.icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
                   <span className="font-semibold text-foreground">{emp.name}</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    ({emp.job_title})
-                  </span>
+                  <span className="text-[10px] text-muted-foreground">({emp.job_title})</span>
                   <span className="text-[10px] font-mono text-primary font-semibold">
                     {formatMoney(emp.hourly_cost, currency)}/hr
                   </span>
@@ -228,7 +213,7 @@ export const TeamSquad = React.memo(function TeamSquad({
       <div className="space-y-2.5">
         <div className="flex items-center justify-between">
           <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-            <span>⏱️</span>
+            <span></span>
             <span>Team Duration &amp; Auto-Adjustment Hub</span>
           </Label>
           <span className="text-[11px] text-muted-foreground">
@@ -260,10 +245,10 @@ export const TeamSquad = React.memo(function TeamSquad({
         {(
           [
             { key: "all", label: `All Active (${assignedPeople.length})` },
-            { key: "dev", label: `💻 Development (${devCount})` },
-            { key: "design", label: `🎨 Design (${designCount})` },
-            { key: "pm_qa", label: `📋 PM & QA (${pmQaCount})` },
-            { key: "leadership", label: `💼 Leadership (${leadCount})` },
+            { key: "dev", label: `Development (${devCount})` },
+            { key: "design", label: `Design (${designCount})` },
+            { key: "pm_qa", label: `PM & QA (${pmQaCount})` },
+            { key: "leadership", label: `Leadership (${leadCount})` },
           ] as const
         ).map(({ key, label }) => (
           <button
@@ -284,8 +269,8 @@ export const TeamSquad = React.memo(function TeamSquad({
       {/* Active member cards */}
       {filteredAssignedPeople.length === 0 ? (
         <div className="p-6 text-center border rounded-xl bg-muted/20 text-xs text-muted-foreground">
-          No members active in this category. Click any member in the &quot;Available
-          Company Members&quot; bar above to add someone.
+          No members active in this category. Click any member in the &quot;Available Company
+          Members&quot; bar above to add someone.
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
@@ -318,12 +303,10 @@ export const TeamSquad = React.memo(function TeamSquad({
                   durationUnit={durationUnit}
                   onRemove={() => onRemoveMember(emp.id)}
                   onUpdateAllocation={(patch) => onUpdateAllocation(emp.id, patch)}
-                  onIncrementDays={(delta) =>
-                    onIndividualIncrementDays(emp.id, delta)
-                  }
+                  onIncrementDays={(delta) => onIndividualIncrementDays(emp.id, delta)}
                 />
               );
-            }
+            },
           )}
         </div>
       )}
@@ -341,7 +324,7 @@ interface MemberCardProps {
   hourlyCost: number;
   totalCost: number;
   alloc: MemberAllocation;
-  groupInfo: { label: string; icon: string; badgeClass: string };
+  groupInfo: { label: string; icon: LucideIcon; badgeClass: string };
   currency: string;
   durationUnit: TimeUnit;
   onRemove: () => void;
@@ -374,14 +357,14 @@ function MemberCard({
             <span
               className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${groupInfo.badgeClass}`}
             >
-              {groupInfo.icon} {groupInfo.label}
+              {groupInfo.label}
             </span>
             {alloc.mode === "custom" ? (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 border border-amber-200 dark:border-amber-800">
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-warning/10 text-warning border border-warning dark:border-warning">
                 Custom: {alloc.customValue} {alloc.customUnit}
               </span>
             ) : (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-200 dark:border-blue-800">
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-muted text-foreground border border-border dark:border-border">
                 Synced with {groupInfo.label} ({alloc.percent}%)
               </span>
             )}
@@ -411,10 +394,10 @@ function MemberCard({
             {durationUnit === "days"
               ? `${days} days`
               : durationUnit === "weeks"
-              ? `${weeks} wks (${days} days)`
-              : durationUnit === "months"
-              ? `${months} mo (${days} days)`
-              : `${hours} hrs`}
+                ? `${weeks} wks (${days} days)`
+                : durationUnit === "months"
+                  ? `${months} mo (${days} days)`
+                  : `${hours} hrs`}
           </span>
           <span className="text-[11px] text-muted-foreground block mt-0.5">
             {hours} hrs @ {formatMoney(hourlyCost, currency)}/hr
@@ -424,24 +407,18 @@ function MemberCard({
           <span className="font-bold text-base text-primary font-display">
             {formatMoney(totalCost, currency)}
           </span>
-          <span className="text-[10px] text-muted-foreground block">
-            Allocated Cost
-          </span>
+          <span className="text-[10px] text-muted-foreground block">Allocated Cost</span>
         </div>
       </div>
 
       {/* Individual allocation controller */}
       <div className="pt-2 border-t space-y-2">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground font-medium">
-            Individual Allocation:
-          </span>
+          <span className="text-muted-foreground font-medium">Individual Allocation:</span>
           {alloc.mode === "custom" ? (
             <button
               type="button"
-              onClick={() =>
-                onUpdateAllocation({ mode: "sync", percent: 100 })
-              }
+              onClick={() => onUpdateAllocation({ mode: "sync", percent: 100 })}
               className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium"
             >
               <Link2 className="size-3" />
@@ -457,9 +434,9 @@ function MemberCard({
                   customUnit: "days",
                 })
               }
-              className="text-[11px] text-amber-600 hover:underline flex items-center gap-1 font-medium"
+              className="text-[11px] text-warning hover:underline flex items-center gap-1 font-medium"
             >
-              <span>✏️ Custom Days/Weeks</span>
+              <span>Custom Days/Weeks</span>
             </button>
           )}
         </div>
@@ -470,6 +447,7 @@ function MemberCard({
               <Input
                 type="number"
                 min={1}
+                aria-label="Custom allocation amount"
                 value={alloc.customValue}
                 onChange={(e) =>
                   onUpdateAllocation({
@@ -480,9 +458,7 @@ function MemberCard({
               />
               <Select
                 value={alloc.customUnit ?? "days"}
-                onValueChange={(u) =>
-                  onUpdateAllocation({ customUnit: u as TimeUnit })
-                }
+                onValueChange={(u) => onUpdateAllocation({ customUnit: u as TimeUnit })}
               >
                 <SelectTrigger className="h-7 text-xs px-2 w-[88px]">
                   <SelectValue />
@@ -505,13 +481,7 @@ function MemberCard({
                   size="sm"
                   className="h-7 text-[11px] px-1.5"
                   onClick={() => onIncrementDays(delta)}
-                  title={
-                    delta === -1
-                      ? "-1 Day"
-                      : delta === 1
-                      ? "+1 Day"
-                      : "+1 Week (5 days)"
-                  }
+                  title={delta === -1 ? "-1 Day" : delta === 1 ? "+1 Day" : "+1 Week (5 days)"}
                 >
                   {delta === -1 ? "-1d" : delta === 1 ? "+1d" : "+1w"}
                 </Button>
@@ -534,10 +504,10 @@ function MemberCard({
                 {pct === 100
                   ? "Full (100%)"
                   : pct === 50
-                  ? "Half (50%)"
-                  : pct === 25
-                  ? "Part (25%)"
-                  : "Advisory (10%)"}
+                    ? "Half (50%)"
+                    : pct === 25
+                      ? "Part (25%)"
+                      : "Advisory (10%)"}
               </button>
             ))}
           </div>

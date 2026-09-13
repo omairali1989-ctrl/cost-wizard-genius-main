@@ -11,6 +11,8 @@ interface PhaseCardProps {
   employees: TeamMemberRate[];
   rateFor: (id: string) => number;
   currency?: string;
+  hoursPerDay?: number;
+  hoursPerMonth?: number;
   onUpdatePhaseName: (phaseId: string, name: string) => void;
   onRemovePhase: (phaseId: string) => void;
   onAddAllocation: (phaseId: string) => void;
@@ -23,6 +25,8 @@ export const PhaseCard = React.memo(function PhaseCard({
   employees,
   rateFor,
   currency = "PKR",
+  hoursPerDay = 8,
+  hoursPerMonth = 160,
   onUpdatePhaseName,
   onRemovePhase,
   onAddAllocation,
@@ -30,22 +34,22 @@ export const PhaseCard = React.memo(function PhaseCard({
   onRemoveAllocation,
 }: PhaseCardProps) {
   const totalHours = React.useMemo(
-    () => phase.allocations.reduce((s, a) => s + Number(a.hours || 0), 0),
+    () => phase.allocations.reduce((s, a) => s + Math.max(Number(a.hours) || 0, 0), 0),
     [phase.allocations],
   );
 
   const totalCost = React.useMemo(
     () =>
       phase.allocations.reduce(
-        (s, a) => s + (Number(a.hours) || 0) * (Number(a.hourlyCost) || 0),
+        (s, a) => s + Math.max(Number(a.hours) || 0, 0) * Math.max(Number(a.hourlyCost) || 0, 0),
         0,
       ),
     [phase.allocations],
   );
 
   const durationDays = React.useMemo(() => {
-    return Math.round((totalHours / 8) * 10) / 10;
-  }, [totalHours]);
+    return Math.round((totalHours / Math.max(hoursPerDay, 1)) * 10) / 10;
+  }, [totalHours, hoursPerDay]);
 
   return (
     <div className="rounded-xl border bg-card/60 p-3.5 shadow-xs space-y-3">
@@ -53,6 +57,7 @@ export const PhaseCard = React.memo(function PhaseCard({
         <div className="flex items-center gap-2 flex-1 min-w-[200px]">
           <Input
             className="max-w-xs font-semibold text-sm h-8"
+            aria-label="Phase name"
             value={phase.name}
             onChange={(e) => onUpdatePhaseName(phase.id, e.target.value)}
             placeholder="Phase Name (e.g., UI/UX Design)"
@@ -98,6 +103,8 @@ export const PhaseCard = React.memo(function PhaseCard({
               employees={employees}
               rateFor={rateFor}
               currency={currency}
+              hoursPerDay={hoursPerDay}
+              hoursPerMonth={hoursPerMonth}
               onUpdate={onUpdateAllocation}
               onRemove={onRemoveAllocation}
             />
@@ -116,4 +123,3 @@ export const PhaseCard = React.memo(function PhaseCard({
     </div>
   );
 });
-

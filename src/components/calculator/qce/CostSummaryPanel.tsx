@@ -45,12 +45,8 @@ const RateCard = ({
       {icon}
       <span>{label}</span>
     </div>
-    <p className="text-lg font-bold font-display text-primary">
-      {formatMoney(price, currency)}
-    </p>
-    <p className="text-[11px] text-muted-foreground mt-0.5">
-      Cost: {formatMoney(cost, currency)}
-    </p>
+    <p className="text-lg font-bold font-display text-primary">{formatMoney(price, currency)}</p>
+    <p className="text-[11px] text-muted-foreground mt-0.5">Cost: {formatMoney(cost, currency)}</p>
   </div>
 );
 
@@ -76,14 +72,12 @@ export const CostSummaryPanel = React.memo(function CostSummaryPanel({
   onApply,
 }: CostSummaryPanelProps) {
   return (
-    <div className="rounded-xl border bg-gradient-to-br from-primary/5 via-card to-background p-5 space-y-4">
+    <div className="rounded-xl border from-primary/5 via-card to-background p-5 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between border-b pb-3">
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-primary" />
-          <h3 className="font-display font-semibold text-base">
-            Cost &amp; Price Breakdown
-          </h3>
+          <h3 className="font-display font-semibold text-base">Cost &amp; Price Breakdown</h3>
         </div>
         <span className="text-xs text-muted-foreground">
           {Math.round(totalHours)} total project hours
@@ -128,9 +122,7 @@ export const CostSummaryPanel = React.memo(function CostSummaryPanel({
           <p className="text-xs uppercase tracking-wider opacity-85">
             Total Project Quote ({durationValue} {durationUnit})
           </p>
-          <p className="text-3xl font-bold font-display mt-0.5">
-            {formatMoney(price, currency)}
-          </p>
+          <p className="text-3xl font-bold font-display mt-0.5">{formatMoney(price, currency)}</p>
           <p className="text-xs opacity-80 mt-1">
             Delivery Cost: {formatMoney(totalCost, currency)} · Margin: {marginPct}%
           </p>
@@ -139,17 +131,13 @@ export const CostSummaryPanel = React.memo(function CostSummaryPanel({
         <div className="flex sm:flex-col items-end justify-between sm:justify-center border-t sm:border-t-0 sm:border-l border-primary-foreground/20 pt-2 sm:pt-0 sm:pl-4">
           <div className="text-right">
             <span className="text-xs opacity-85 block">
-              Sales Commission (Ayesha – {salesCommissionPct}%):
+              Sales Commission ({salesCommissionPct}%):
             </span>
-            <span className="font-semibold text-sm">
-              {formatMoney(commission, currency)}
-            </span>
+            <span className="font-semibold text-sm">{formatMoney(commission, currency)}</span>
           </div>
           <div className="text-right mt-1">
             <span className="text-xs opacity-85 block">Net Company Profit:</span>
-            <span className="font-semibold text-sm">
-              {formatMoney(netProfit, currency)}
-            </span>
+            <span className="font-semibold text-sm">{formatMoney(netProfit, currency)}</span>
           </div>
         </div>
       </div>

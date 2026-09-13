@@ -18,23 +18,20 @@ import { ROLE_GROUP_INFO } from "./types";
 
 const GROUP_ACCENT: Record<RoleGroup, { border: string; badge: string }> = {
   dev: {
-    border: "border-blue-500/30 hover:border-blue-500/50",
-    badge: "bg-blue-500/10 text-blue-600 border-blue-200 dark:border-blue-800",
+    border: "border-border hover:border-border",
+    badge: "bg-muted text-foreground border-border dark:border-border",
   },
   design: {
-    border: "border-purple-500/30 hover:border-purple-500/50",
-    badge:
-      "bg-purple-500/10 text-purple-600 border-purple-200 dark:border-purple-800",
+    border: "border-border hover:border-border",
+    badge: "bg-muted text-foreground border-border dark:border-border",
   },
   pm_qa: {
-    border: "border-emerald-500/30 hover:border-emerald-500/50",
-    badge:
-      "bg-emerald-500/10 text-emerald-600 border-emerald-200 dark:border-emerald-800",
+    border: "border-border hover:border-border",
+    badge: "bg-muted text-foreground border-border dark:border-border",
   },
   leadership: {
-    border: "border-amber-500/30 hover:border-amber-500/50",
-    badge:
-      "bg-amber-500/10 text-amber-600 border-amber-200 dark:border-amber-800",
+    border: "border-warning hover:border-warning",
+    badge: "bg-warning/10 text-warning border-warning dark:border-warning",
   },
 };
 
@@ -67,11 +64,16 @@ export const TeamGroupController = React.memo(function TeamGroupController({
   const accent = GROUP_ACCENT[group];
   const isSynced = duration.mode === "sync_project";
 
-  const memberLabel = group === "dev"
-    ? activeCount === 1 ? "developer" : "developers"
-    : group === "design"
-    ? activeCount === 1 ? "designer" : "designers"
-    : "active";
+  const memberLabel =
+    group === "dev"
+      ? activeCount === 1
+        ? "developer"
+        : "developers"
+      : group === "design"
+        ? activeCount === 1
+          ? "designer"
+          : "designers"
+        : "active";
 
   // Leadership group has a simpler layout (no day nudge buttons, advisory %)
   const isLeadership = group === "leadership";
@@ -83,11 +85,9 @@ export const TeamGroupController = React.memo(function TeamGroupController({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <span className="text-lg">{info.icon}</span>
+          <info.icon className="size-4 text-muted-foreground" aria-hidden="true" />
           <div>
-            <h4 className="text-xs font-bold leading-tight text-foreground">
-              {info.label}
-            </h4>
+            <h4 className="text-xs font-bold leading-tight text-foreground">{info.label}</h4>
             <p className="text-[11px] text-muted-foreground">
               {activeCount} {memberLabel} · {Math.round(totalHours)} hrs total
             </p>
@@ -95,17 +95,11 @@ export const TeamGroupController = React.memo(function TeamGroupController({
         </div>
 
         {isLeadership ? (
-          <Badge
-            variant="outline"
-            className={`text-[10px] font-semibold ${accent.badge}`}
-          >
+          <Badge variant="outline" className={`text-[10px] font-semibold ${accent.badge}`}>
             Strategic Oversight
           </Badge>
         ) : isSynced ? (
-          <Badge
-            variant="outline"
-            className={`text-[10px] gap-1 font-semibold ${accent.badge}`}
-          >
+          <Badge variant="outline" className={`text-[10px] gap-1 font-semibold ${accent.badge}`}>
             <Link2 className="size-2.5" />
             <span>
               Synced ({projectDurationValue} {projectDurationUnit})
@@ -114,9 +108,9 @@ export const TeamGroupController = React.memo(function TeamGroupController({
         ) : (
           <Badge
             variant="outline"
-            className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-200 dark:border-amber-800 gap-1 font-semibold"
+            className="text-[10px] bg-warning/10 text-warning border-warning dark:border-warning gap-1 font-semibold"
           >
-            ⚡ Custom Schedule
+            Custom Schedule
           </Badge>
         )}
       </div>
@@ -127,6 +121,7 @@ export const TeamGroupController = React.memo(function TeamGroupController({
           <Input
             type="number"
             min={1}
+            aria-label={`${group} duration`}
             value={duration.value}
             onChange={(e) =>
               onDurationChange(group, Math.max(1, Number(e.target.value)), duration.unit)
@@ -135,9 +130,7 @@ export const TeamGroupController = React.memo(function TeamGroupController({
           />
           <Select
             value={duration.unit}
-            onValueChange={(u) =>
-              onDurationChange(group, duration.value, u as TimeUnit)
-            }
+            onValueChange={(u) => onDurationChange(group, duration.value, u as TimeUnit)}
           >
             <SelectTrigger className="h-8 text-xs flex-1">
               <SelectValue />
@@ -219,9 +212,7 @@ export const TeamGroupController = React.memo(function TeamGroupController({
         </Button>
 
         {isLeadership ? (
-          <span className="text-[10px] text-muted-foreground">
-            Directors &amp; Sales Advisory
-          </span>
+          <span className="text-[10px] text-muted-foreground">Directors &amp; Sales Advisory</span>
         ) : (
           <div className="flex items-center gap-1">
             <Button

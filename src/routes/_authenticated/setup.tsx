@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CURRENCY_OPTIONS } from "@/lib/currency";
 import {
   Select,
   SelectContent,
@@ -27,8 +28,6 @@ export const Route = createFileRoute("/_authenticated/setup")({
   }),
   component: SetupPage,
 });
-
-const CURRENCIES = ["USD", "EUR", "GBP", "AUD", "CAD", "AED", "INR", "PKR", "SGD", "ZAR"];
 
 function SetupPage() {
   const navigate = useNavigate();
@@ -52,7 +51,10 @@ function SetupPage() {
       _currency: currency,
     });
     setBusy(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     await queryClient.invalidateQueries();
     toast.success("Workspace ready");
     navigate({ to: "/people" });
@@ -89,9 +91,9 @@ function SetupPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CURRENCIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  {CURRENCY_OPTIONS.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
