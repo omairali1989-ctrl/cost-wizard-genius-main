@@ -242,6 +242,77 @@ async function main() {
     );
   `);
 
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS sales_process_stages (
+      id VARCHAR(36) PRIMARY KEY,
+      company_id VARCHAR(36) NOT NULL,
+      name VARCHAR(100) NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      probability_pct DECIMAL(5, 2) NOT NULL DEFAULT 0,
+      color VARCHAR(30) NOT NULL DEFAULT 'slate',
+      is_won BOOLEAN NOT NULL DEFAULT false,
+      is_lost BOOLEAN NOT NULL DEFAULT false,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_sales_stage_company_name (company_id, name),
+      INDEX idx_sales_stages_order (company_id, sort_order)
+    );
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS sales_team_members (
+      id VARCHAR(36) PRIMARY KEY,
+      company_id VARCHAR(36) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      email VARCHAR(255),
+      role VARCHAR(100) NOT NULL DEFAULT 'Sales representative',
+      target_amount DECIMAL(15, 2) NOT NULL DEFAULT 0,
+      commission_rule_id VARCHAR(36),
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_sales_team_company (company_id, active, name)
+    );
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS sales_leads (
+      id VARCHAR(36) PRIMARY KEY,
+      company_id VARCHAR(36) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      company_name VARCHAR(255),
+      email VARCHAR(255),
+      phone VARCHAR(80),
+      source VARCHAR(100) NOT NULL DEFAULT 'Other',
+      stage VARCHAR(100) NOT NULL DEFAULT 'New lead',
+      owner_id VARCHAR(36),
+      estimated_value DECIMAL(15, 2) NOT NULL DEFAULT 0,
+      notes TEXT,
+      next_action VARCHAR(255),
+      next_action_at DATETIME NULL,
+      last_contact_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_sales_leads_pipeline (company_id, stage, owner_id, updated_at)
+    );
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS lead_acquisition_costs (
+      id VARCHAR(36) PRIMARY KEY,
+      company_id VARCHAR(36) NOT NULL,
+      period_start DATE NOT NULL,
+      source VARCHAR(100) NOT NULL DEFAULT 'All channels',
+      spend_amount DECIMAL(15, 2) NOT NULL DEFAULT 0,
+      leads_generated INT NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_lead_costs_period (company_id, period_start, source)
+    );
+  `);
+
   console.log("All tables created or verified.");
 
   // Seed scope_features

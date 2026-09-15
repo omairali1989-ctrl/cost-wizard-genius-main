@@ -18,7 +18,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { logActivity, useInvalidate, useOverheads, type WorkspaceData } from "@/lib/workspace";
-import { formatMoney, monthlyOverheadAmount } from "@/lib/pricing";
+import {
+  formatMoney,
+  monthlyOverheadAmount,
+  overheadClassificationLabel,
+  OVERHEAD_CLASSIFICATIONS,
+} from "@/lib/pricing";
 
 export const Route = createFileRoute("/_authenticated/settings/overheads")({
   head: () => ({
@@ -43,6 +48,12 @@ function OverheadsPage({ workspace }: { workspace: WorkspaceData }) {
     (sum, overhead) => sum + monthlyOverheadAmount(overhead),
     0,
   );
+  const totalsByClassification = OVERHEAD_CLASSIFICATIONS.map((classification) => ({
+    ...classification,
+    amount: overheads
+      .filter((overhead) => (overhead.category ?? "other") === classification.value)
+      .reduce((sum, overhead) => sum + monthlyOverheadAmount(overhead), 0),
+  })).filter((classification) => classification.amount > 0);
 
   const addOverhead = async () => {
     const { error } = await supabase
@@ -52,13 +63,23 @@ function OverheadsPage({ workspace }: { workspace: WorkspaceData }) {
       toast.error(error.message);
       return;
     }
+    await logActivity(companyId, "created", "overhead", null, { classification: "other" });
     invalidate(["overheads"]);
   };
 
   const updateOverhead = async (id: string, patch: Record<string, unknown>) => {
+    const safePatch = { ...patch };
+    if ("monthly_amount" in safePatch) {
+      const amount = Number(safePatch["monthly_amount"]);
+      if (!Number.isFinite(amount) || amount < 0) {
+        toast.error("Overhead amount must be zero or greater.");
+        return;
+      }
+      safePatch["monthly_amount"] = amount;
+    }
     const { error } = await supabase
       .from("overheads")
-      .update(patch as never)
+      .update(safePatch as never)
       .eq("id", id);
     if (error) {
       toast.error(error.message);
@@ -93,6 +114,19 @@ function OverheadsPage({ workspace }: { workspace: WorkspaceData }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {totalsByClassification.length > 0 && (
+            <div className="mb-5 grid gap-2 border-b pb-5 sm:grid-cols-2 lg:grid-cols-4">
+              {totalsByClassification.map((classification) => (
+                <div key={classification.value} className="rounded-lg border bg-muted/30 p-3">
+                  <p className="text-xs text-muted-foreground">{classification.label}</p>
+                  <p className="mt-1 font-display text-base font-semibold tabular-nums">
+                    {formatMoney(classification.amount, currency)}
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">/ month</span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
           {overheads.map((overhead) => (
             <div key={overhead.id} className="grid gap-2 sm:grid-cols-[2fr_1fr_1fr_1fr_auto]">
               <Input
@@ -101,15 +135,30 @@ function OverheadsPage({ workspace }: { workspace: WorkspaceData }) {
                 defaultValue={overhead.name}
                 onBlur={(event) => updateOverhead(overhead.id, { name: event.target.value })}
               />
-              <Input
-                aria-label="Category"
+              <Select
                 disabled={readOnly}
-                defaultValue={overhead.category ?? ""}
-                placeholder="Category"
-                onBlur={(event) =>
-                  updateOverhead(overhead.id, { category: event.target.value || null })
-                }
-              />
+                value={overhead.category ?? "other"}
+                onValueChange={(category) => updateOverhead(overhead.id, { category })}
+              >
+                <SelectTrigger aria-label={`Classification for ${overhead.name}`}>
+                  <SelectValue placeholder="Classification" />
+                </SelectTrigger>
+                <SelectContent>
+                  {overhead.category &&
+                    !OVERHEAD_CLASSIFICATIONS.some(
+                      (classification) => classification.value === overhead.category,
+                    ) && (
+                      <SelectItem value={overhead.category}>
+                        {overheadClassificationLabel(overhead.category)}
+                      </SelectItem>
+                    )}
+                  {OVERHEAD_CLASSIFICATIONS.map((classification) => (
+                    <SelectItem key={classification.value} value={classification.value}>
+                      {classification.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Input
                 aria-label="Overhead amount"
                 disabled={readOnly}

@@ -37,6 +37,29 @@ export interface OverheadRecord {
   allocation_basis: string;
 }
 
+/**
+ * Shared overhead classifications. Keep the values stable because they are
+ * persisted in the existing `overheads.category` column and used by reports.
+ */
+export const OVERHEAD_CLASSIFICATIONS = [
+  { value: "facilities", label: "Facilities & office" },
+  { value: "software", label: "Software & tooling" },
+  { value: "admin", label: "Administration" },
+  { value: "people", label: "People & benefits" },
+  { value: "sales", label: "Sales & marketing" },
+  { value: "professional", label: "Professional services" },
+  { value: "finance", label: "Finance & legal" },
+  { value: "other", label: "Other" },
+] as const;
+
+export type OverheadClassification = (typeof OVERHEAD_CLASSIFICATIONS)[number]["value"];
+
+export const overheadClassificationLabel = (value: string | null | undefined): string =>
+  OVERHEAD_CLASSIFICATIONS.find((classification) => classification.value === value)?.label ??
+  (value
+    ? value.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : "Other");
+
 export interface Allocation {
   id: string;
   employeeId: string | null;

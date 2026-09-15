@@ -21,6 +21,7 @@ import { Route as AuthenticatedCompareRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedGuideRouteImport } from './routes/_authenticated/guide'
 import { Route as AuthenticatedPeopleRouteImport } from './routes/_authenticated/people'
+import { Route as AuthenticatedSalesRouteImport } from './routes/_authenticated/sales'
 import { Route as AuthenticatedScopeBlueprintsRouteImport } from './routes/_authenticated/scope-blueprints'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/setup'
@@ -35,6 +36,8 @@ import { Route as AuthenticatedSettingsFeatureLibraryRouteImport } from './route
 import { Route as AuthenticatedSettingsOverheadsRouteImport } from './routes/_authenticated/settings.overheads'
 import { Route as AuthenticatedSettingsPolicyRouteImport } from './routes/_authenticated/settings.policy'
 import { Route as AuthenticatedSettingsSalesCommissionRouteImport } from './routes/_authenticated/settings.sales-commission'
+import { Route as AuthenticatedSettingsSalesProcessRouteImport } from './routes/_authenticated/settings.sales-process'
+import { Route as AuthenticatedSettingsSalesTeamRouteImport } from './routes/_authenticated/settings.sales-team'
 import { Route as AuthenticatedSettingsTeamRouteImport } from './routes/_authenticated/settings.team'
 
 const IndexRoute = IndexRouteImport.update({
@@ -95,6 +98,11 @@ const AuthenticatedGuideRoute = AuthenticatedGuideRouteImport.update({
 const AuthenticatedPeopleRoute = AuthenticatedPeopleRouteImport.update({
   id: '/people',
   path: '/people',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedSalesRoute = AuthenticatedSalesRouteImport.update({
+  id: '/sales',
+  path: '/sales',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedScopeBlueprintsRoute =
@@ -177,6 +185,18 @@ const AuthenticatedSettingsSalesCommissionRoute =
     path: '/sales-commission',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsSalesProcessRoute =
+  AuthenticatedSettingsSalesProcessRouteImport.update({
+    id: '/sales-process',
+    path: '/sales-process',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsSalesTeamRoute =
+  AuthenticatedSettingsSalesTeamRouteImport.update({
+    id: '/sales-team',
+    path: '/sales-team',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsTeamRoute =
   AuthenticatedSettingsTeamRouteImport.update({
     id: '/team',
@@ -196,6 +216,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/guide': typeof AuthenticatedGuideRoute
   '/people': typeof AuthenticatedPeopleRoute
+  '/sales': typeof AuthenticatedSalesRoute
   '/scope-blueprints': typeof AuthenticatedScopeBlueprintsRoute
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/setup': typeof AuthenticatedSetupRoute
@@ -208,6 +229,8 @@ export interface FileRoutesByFullPath {
   '/settings/overheads': typeof AuthenticatedSettingsOverheadsRoute
   '/settings/policy': typeof AuthenticatedSettingsPolicyRoute
   '/settings/sales-commission': typeof AuthenticatedSettingsSalesCommissionRoute
+  '/settings/sales-process': typeof AuthenticatedSettingsSalesProcessRoute
+  '/settings/sales-team': typeof AuthenticatedSettingsSalesTeamRoute
   '/settings/team': typeof AuthenticatedSettingsTeamRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
@@ -224,6 +247,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/guide': typeof AuthenticatedGuideRoute
   '/people': typeof AuthenticatedPeopleRoute
+  '/sales': typeof AuthenticatedSalesRoute
   '/scope-blueprints': typeof AuthenticatedScopeBlueprintsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -235,6 +259,8 @@ export interface FileRoutesByTo {
   '/settings/overheads': typeof AuthenticatedSettingsOverheadsRoute
   '/settings/policy': typeof AuthenticatedSettingsPolicyRoute
   '/settings/sales-commission': typeof AuthenticatedSettingsSalesCommissionRoute
+  '/settings/sales-process': typeof AuthenticatedSettingsSalesProcessRoute
+  '/settings/sales-team': typeof AuthenticatedSettingsSalesTeamRoute
   '/settings/team': typeof AuthenticatedSettingsTeamRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
@@ -253,6 +279,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/guide': typeof AuthenticatedGuideRoute
   '/_authenticated/people': typeof AuthenticatedPeopleRoute
+  '/_authenticated/sales': typeof AuthenticatedSalesRoute
   '/_authenticated/scope-blueprints': typeof AuthenticatedScopeBlueprintsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/_authenticated/setup': typeof AuthenticatedSetupRoute
@@ -265,6 +292,8 @@ export interface FileRoutesById {
   '/_authenticated/settings/overheads': typeof AuthenticatedSettingsOverheadsRoute
   '/_authenticated/settings/policy': typeof AuthenticatedSettingsPolicyRoute
   '/_authenticated/settings/sales-commission': typeof AuthenticatedSettingsSalesCommissionRoute
+  '/_authenticated/settings/sales-process': typeof AuthenticatedSettingsSalesProcessRoute
+  '/_authenticated/settings/sales-team': typeof AuthenticatedSettingsSalesTeamRoute
   '/_authenticated/settings/team': typeof AuthenticatedSettingsTeamRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
@@ -283,6 +312,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/guide'
     | '/people'
+    | '/sales'
     | '/scope-blueprints'
     | '/settings'
     | '/setup'
@@ -295,6 +325,8 @@ export interface FileRouteTypes {
     | '/settings/overheads'
     | '/settings/policy'
     | '/settings/sales-commission'
+    | '/settings/sales-process'
+    | '/settings/sales-team'
     | '/settings/team'
     | '/projects/'
     | '/settings/'
@@ -311,6 +343,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/guide'
     | '/people'
+    | '/sales'
     | '/scope-blueprints'
     | '/setup'
     | '/invite/$token'
@@ -322,6 +355,8 @@ export interface FileRouteTypes {
     | '/settings/overheads'
     | '/settings/policy'
     | '/settings/sales-commission'
+    | '/settings/sales-process'
+    | '/settings/sales-team'
     | '/settings/team'
     | '/projects'
     | '/settings'
@@ -339,6 +374,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard'
     | '/_authenticated/guide'
     | '/_authenticated/people'
+    | '/_authenticated/sales'
     | '/_authenticated/scope-blueprints'
     | '/_authenticated/settings'
     | '/_authenticated/setup'
@@ -351,6 +387,8 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/overheads'
     | '/_authenticated/settings/policy'
     | '/_authenticated/settings/sales-commission'
+    | '/_authenticated/settings/sales-process'
+    | '/_authenticated/settings/sales-team'
     | '/_authenticated/settings/team'
     | '/_authenticated/projects/'
     | '/_authenticated/settings/'
@@ -451,6 +489,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPeopleRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/sales': {
+      id: '/_authenticated/sales'
+      path: '/sales'
+      fullPath: '/sales'
+      preLoaderRoute: typeof AuthenticatedSalesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/scope-blueprints': {
       id: '/_authenticated/scope-blueprints'
       path: '/scope-blueprints'
@@ -549,6 +594,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsSalesCommissionRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/sales-process': {
+      id: '/_authenticated/settings/sales-process'
+      path: '/sales-process'
+      fullPath: '/settings/sales-process'
+      preLoaderRoute: typeof AuthenticatedSettingsSalesProcessRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/sales-team': {
+      id: '/_authenticated/settings/sales-team'
+      path: '/sales-team'
+      fullPath: '/settings/sales-team'
+      preLoaderRoute: typeof AuthenticatedSettingsSalesTeamRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/settings/team': {
       id: '/_authenticated/settings/team'
       path: '/team'
@@ -567,6 +626,8 @@ interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsOverheadsRoute: typeof AuthenticatedSettingsOverheadsRoute
   AuthenticatedSettingsPolicyRoute: typeof AuthenticatedSettingsPolicyRoute
   AuthenticatedSettingsSalesCommissionRoute: typeof AuthenticatedSettingsSalesCommissionRoute
+  AuthenticatedSettingsSalesProcessRoute: typeof AuthenticatedSettingsSalesProcessRoute
+  AuthenticatedSettingsSalesTeamRoute: typeof AuthenticatedSettingsSalesTeamRoute
   AuthenticatedSettingsTeamRoute: typeof AuthenticatedSettingsTeamRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
 }
@@ -582,6 +643,9 @@ const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsPolicyRoute: AuthenticatedSettingsPolicyRoute,
   AuthenticatedSettingsSalesCommissionRoute:
     AuthenticatedSettingsSalesCommissionRoute,
+  AuthenticatedSettingsSalesProcessRoute:
+    AuthenticatedSettingsSalesProcessRoute,
+  AuthenticatedSettingsSalesTeamRoute: AuthenticatedSettingsSalesTeamRoute,
   AuthenticatedSettingsTeamRoute: AuthenticatedSettingsTeamRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
 }
@@ -599,6 +663,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedGuideRoute: typeof AuthenticatedGuideRoute
   AuthenticatedPeopleRoute: typeof AuthenticatedPeopleRoute
+  AuthenticatedSalesRoute: typeof AuthenticatedSalesRoute
   AuthenticatedScopeBlueprintsRoute: typeof AuthenticatedScopeBlueprintsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
   AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
@@ -615,6 +680,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedGuideRoute: AuthenticatedGuideRoute,
   AuthenticatedPeopleRoute: AuthenticatedPeopleRoute,
+  AuthenticatedSalesRoute: AuthenticatedSalesRoute,
   AuthenticatedScopeBlueprintsRoute: AuthenticatedScopeBlueprintsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedSetupRoute: AuthenticatedSetupRoute,

@@ -21,6 +21,7 @@ import {
   Layers,
   UserCog,
   Users,
+  Handshake,
   type LucideIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -46,6 +47,7 @@ const MAIN_NAV = [
   { to: "/compare", label: "Compare scenarios", icon: Scale, perm: "always" },
   { to: "/people", label: "People & costs", icon: Users, perm: "finance" },
   { to: "/scope-blueprints", label: "Scope blueprints", icon: Layers, perm: "always" },
+  { to: "/sales", label: "Sales hub", icon: Handshake, perm: "always" },
 ] as const satisfies readonly { to: string; label: string; icon: LucideIcon; perm: Perm }[];
 
 const SETTINGS_NAV = [
@@ -63,6 +65,8 @@ const SETTINGS_NAV = [
     icon: BadgePercent,
     perm: "always",
   },
+  { to: "/settings/sales-process", label: "Sales process", icon: Layers, perm: "always" },
+  { to: "/settings/sales-team", label: "Sales team", icon: UserCog, perm: "always" },
   {
     to: "/settings/feature-library",
     label: "Feature library & JSON",

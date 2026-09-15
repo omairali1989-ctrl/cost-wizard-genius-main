@@ -17,6 +17,10 @@ const ALLOWED_TABLES = new Set([
   "invitations",
   "scope_features",
   "project_presets",
+  "sales_process_stages",
+  "sales_team_members",
+  "sales_leads",
+  "lead_acquisition_costs",
 ]);
 
 const JSON_COLUMNS = new Set([
@@ -185,9 +189,13 @@ function canWriteTable(
     table === "overheads" ||
     table === "cost_policies" ||
     table === "scope_features" ||
-    table === "project_presets"
+    table === "project_presets" ||
+    table === "sales_process_stages" ||
+    table === "sales_team_members" ||
+    table === "sales_leads" ||
+    table === "lead_acquisition_costs"
   )
-    return hasRole(user, COST_ROLES);
+    return hasRole(user, EDIT_ROLES);
   if (table === "projects" || table === "calculations") return hasRole(user, EDIT_ROLES);
   return false;
 }
@@ -213,6 +221,11 @@ function validateWriteRecord(table: string, record: Record<string, any>) {
     default_margin_pct: [0, 95],
     default_markup_pct: [0, 1000],
     rounding_step: [0.000001, Number.MAX_SAFE_INTEGER],
+    probability_pct: [0, 100],
+    target_amount: [0, Number.MAX_SAFE_INTEGER],
+    estimated_value: [0, Number.MAX_SAFE_INTEGER],
+    spend_amount: [0, Number.MAX_SAFE_INTEGER],
+    leads_generated: [0, Number.MAX_SAFE_INTEGER],
   };
   for (const [column, [min, max]] of Object.entries(ranges)) {
     if (!(column in record)) continue;
@@ -253,6 +266,18 @@ function validateWriteRecord(table: string, record: Record<string, any>) {
     !["draft", "sent", "approved", "in_progress", "completed"].includes(String(record["status"]))
   ) {
     return "status must be draft, sent, approved, in_progress, or completed.";
+  }
+  if (
+    [
+      "sales_process_stages",
+      "sales_team_members",
+      "sales_leads",
+      "lead_acquisition_costs",
+    ].includes(table) &&
+    "name" in record &&
+    !String(record["name"]).trim()
+  ) {
+    return "name cannot be empty.";
   }
   return null;
 }
@@ -714,6 +739,31 @@ export async function handleApiRequest(request: Request): Promise<Response> {
            (?, ?, 'Software & tooling', 'software', 0, 'per_employee'),
            (?, ?, 'Admin & support staff', 'admin', 0, 'per_employee')`,
           [crypto.randomUUID(), newId, crypto.randomUUID(), newId, crypto.randomUUID(), newId],
+        );
+
+        await query(
+          `INSERT INTO sales_process_stages
+           (id, company_id, name, sort_order, probability_pct, color, is_won, is_lost) VALUES
+           (?, ?, 'New lead', 0, 10, 'slate', false, false),
+           (?, ?, 'Qualified', 1, 25, 'blue', false, false),
+           (?, ?, 'Proposal', 2, 50, 'amber', false, false),
+           (?, ?, 'Negotiation', 3, 75, 'violet', false, false),
+           (?, ?, 'Won', 4, 100, 'emerald', true, false),
+           (?, ?, 'Lost', 5, 0, 'rose', false, true)`,
+          [
+            crypto.randomUUID(),
+            newId,
+            crypto.randomUUID(),
+            newId,
+            crypto.randomUUID(),
+            newId,
+            crypto.randomUUID(),
+            newId,
+            crypto.randomUUID(),
+            newId,
+            crypto.randomUUID(),
+            newId,
+          ],
         );
 
         return jsonResponse({ data: newId, error: null });
